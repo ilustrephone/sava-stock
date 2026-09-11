@@ -1,0 +1,1393 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sava Stock</title>
+<meta name="description" content="Control de stock e IMEI para venta mayorista de iPhones, con lectura por código de barras." />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  window.SAVA_SUPABASE_URL = "https://ukoypobxowzifguiuffj.supabase.co";
+  window.SAVA_SUPABASE_ANON_KEY = "sb_publishable_qhHs2ktrpq24EbXscemtvw_-SU_dwE6";
+</script>
+<style>
+  :root{
+    --paper:#EEF1EF;
+    --surface:#FFFFFF;
+    --surface-2:#E3E8E5;
+    --ink:#12181A;
+    --ink-muted:#5C6B65;
+    --border:#D5DBD7;
+    --brand:#1F6F5C;
+    --brand-strong:#155246;
+    --brand-soft:#DCEFE9;
+    --scan:#C15E0B;
+    --scan-soft:#F7E3CC;
+    --danger:#B23A2E;
+    --danger-soft:#F6DEDA;
+    --warning:#96690A;
+    --warning-soft:#F3E7C6;
+    --info:#3B5BA6;
+    --info-soft:#DEE4F4;
+    --radius:12px;
+    --radius-sm:8px;
+    --shadow:0 1px 2px rgba(18,24,26,.06), 0 10px 26px -14px rgba(18,24,26,.22);
+    --font-display:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,'SF Mono','Cascadia Mono','Consolas',monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#12171A;
+      --surface:#1A2225;
+      --surface-2:#212B2E;
+      --ink:#E9EEEB;
+      --ink-muted:#93A49D;
+      --border:#2B3639;
+      --brand:#45AF8F;
+      --brand-strong:#6FCBAE;
+      --brand-soft:#173C33;
+      --scan:#EC9349;
+      --scan-soft:#3A2913;
+      --danger:#E2685A;
+      --danger-soft:#3B1E1A;
+      --warning:#E3BB4C;
+      --warning-soft:#352C10;
+      --info:#8DA9E6;
+      --info-soft:#1F2B45;
+      --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 30px -16px rgba(0,0,0,.65);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#12171A;
+    --surface:#1A2225;
+    --surface-2:#212B2E;
+    --ink:#E9EEEB;
+    --ink-muted:#93A49D;
+    --border:#2B3639;
+    --brand:#45AF8F;
+    --brand-strong:#6FCBAE;
+    --brand-soft:#173C33;
+    --scan:#EC9349;
+    --scan-soft:#3A2913;
+    --danger:#E2685A;
+    --danger-soft:#3B1E1A;
+    --warning:#E3BB4C;
+    --warning-soft:#352C10;
+    --info:#8DA9E6;
+    --info-soft:#1F2B45;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 14px 30px -16px rgba(0,0,0,.65);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-display);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:var(--font-display);text-wrap:balance;margin:0;}
+  button{font-family:inherit;}
+  ::selection{background:var(--brand-soft);}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+  a{color:inherit;}
+  :focus-visible{outline:2px solid var(--scan);outline-offset:2px;}
+
+  .app{display:flex;min-height:100vh;}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:236px;flex:none;background:var(--surface);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:20px 14px;gap:18px;position:sticky;top:0;align-self:stretch;
+  }
+  .brand{display:flex;align-items:center;gap:10px;padding:0 6px;}
+  .brand-mark{
+    width:36px;height:36px;border-radius:9px;background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;letter-spacing:.02em;flex:none;
+  }
+  .brand-text{display:flex;flex-direction:column;line-height:1.25;min-width:0;}
+  .brand-text strong{font-size:15px;font-weight:700;}
+  .brand-text span{font-size:11px;color:var(--ink-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  .nav{display:flex;flex-direction:column;gap:2px;}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);
+    border:none;background:transparent;color:var(--ink-muted);font-size:13.5px;font-weight:600;
+    cursor:pointer;text-align:left;transition:background .12s ease,color .12s ease;
+  }
+  .nav-item svg{flex:none;opacity:.85;}
+  .nav-item:hover{background:var(--surface-2);color:var(--ink);}
+  .nav-item.active{background:var(--brand-soft);color:var(--brand-strong);}
+  .nav-item.active svg{opacity:1;}
+
+  .sidebar-spacer{flex:1;}
+  .sidebar-stat{
+    background:var(--surface-2);border-radius:var(--radius);padding:12px 14px;display:flex;flex-direction:column;gap:2px;
+  }
+  .sidebar-stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);font-weight:600;}
+  .sidebar-stat-value{font-family:var(--font-mono);font-size:22px;font-weight:600;}
+  .sidebar-banner{
+    background:var(--scan-soft);color:var(--scan);border-radius:var(--radius-sm);padding:9px 10px;font-size:11.5px;
+    line-height:1.4;font-weight:600;
+  }
+
+  /* ---------- Main ---------- */
+  .main{flex:1;min-width:0;padding:26px 34px 60px;max-width:1180px;}
+  .topbar{margin-bottom:22px;display:flex;flex-direction:column;gap:4px;}
+  .topbar h1{font-size:23px;font-weight:700;}
+  .topbar p{margin:0;color:var(--ink-muted);font-size:13.5px;}
+  .view[hidden]{display:none;}
+
+  /* ---------- Shared bits ---------- */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-sm);
+    border:1px solid transparent;padding:9px 14px;font-size:13.5px;font-weight:600;cursor:pointer;
+    transition:filter .12s ease, background .12s ease;white-space:nowrap;
+  }
+  .btn:active{filter:brightness(.94);}
+  .btn-primary{background:var(--brand);color:#fff;}
+  .btn-primary:hover{background:var(--brand-strong);}
+  .btn-scan{background:var(--scan);color:#fff;}
+  .btn-scan:hover{filter:brightness(1.06);}
+  .btn-ghost{background:transparent;color:var(--ink);border-color:var(--border);}
+  .btn-ghost:hover{background:var(--surface-2);}
+  .btn-danger{background:transparent;color:var(--danger);border-color:var(--danger-soft);}
+  .btn-danger:hover{background:var(--danger-soft);}
+  .btn-sm{padding:6px 10px;font-size:12.5px;}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;}
+
+  label{font-size:12px;font-weight:600;color:var(--ink-muted);display:block;margin-bottom:5px;}
+  input,select,textarea{
+    width:100%;background:var(--paper);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:9px 10px;font-size:13.5px;color:var(--ink);font-family:var(--font-display);
+  }
+  input.mono{font-family:var(--font-mono);}
+  textarea{resize:vertical;min-height:56px;}
+  .field{margin-bottom:12px;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:11.5px;font-weight:700;
+    letter-spacing:.01em;
+  }
+  .pill::before{content:"";width:6px;height:6px;border-radius:99px;background:currentColor;}
+  .pill-stock{background:var(--brand-soft);color:var(--brand-strong);}
+  .pill-sold{background:var(--info-soft);color:var(--info);}
+  .pill-reserved{background:var(--warning-soft);color:var(--warning);}
+
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);
+    padding:11px 18px;border-radius:99px;font-size:13px;font-weight:600;box-shadow:var(--shadow);z-index:80;
+    max-width:90vw;text-align:center;
+  }
+  .toast[hidden]{display:none;}
+  .toast.toast-danger{background:var(--danger);color:#fff;}
+
+  /* ---------- Scan view ---------- */
+  .mode-switch{display:inline-flex;background:var(--surface-2);border-radius:99px;padding:3px;gap:2px;margin-bottom:18px;}
+  .mode-switch button{
+    border:none;background:transparent;padding:8px 16px;border-radius:99px;font-size:13px;font-weight:700;color:var(--ink-muted);cursor:pointer;
+  }
+  .mode-switch button.active.mode-alta{background:var(--brand);color:#fff;}
+  .mode-switch button.active.mode-venta{background:var(--scan);color:#fff;}
+
+  .scan-panel{padding:22px 24px;margin-bottom:18px;}
+  .scan-panel-label{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-muted);font-weight:700;margin-bottom:8px;}
+  .scan-input-row{display:flex;gap:10px;align-items:stretch;}
+  #scanInput{
+    flex:1;font-family:var(--font-mono);font-size:19px;letter-spacing:.02em;padding:14px 16px;border-radius:var(--radius);
+    border:2px solid var(--border);background:var(--paper);
+  }
+  #scanInput:focus{border-color:var(--scan);box-shadow:0 0 0 3px var(--scan-soft);}
+  .scan-hint{margin-top:9px;font-size:12px;color:var(--ink-muted);}
+
+  .scan-grid{display:grid;grid-template-columns:1fr;gap:16px;}
+  @media (min-width:900px){ .scan-grid.venta{grid-template-columns:1.35fr 1fr;} }
+
+  .section-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin:0 0 10px;}
+
+  .quickadd{padding:18px 20px;margin-top:2px;border-color:var(--brand);}
+  .quickadd .imei-echo{font-family:var(--font-mono);font-size:14px;background:var(--brand-soft);color:var(--brand-strong);
+    display:inline-block;padding:4px 10px;border-radius:99px;margin-bottom:14px;font-weight:600;}
+
+  .activity-list{display:flex;flex-direction:column;}
+  .activity-row{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--border);font-size:13px;}
+  .activity-row:last-child{border-bottom:none;}
+  .activity-imei{font-family:var(--font-mono);font-size:12px;color:var(--ink-muted);}
+  .activity-main{flex:1;min-width:0;}
+  .activity-main strong{display:block;font-size:13.5px;}
+  .activity-main span{font-size:11.5px;color:var(--ink-muted);}
+  .empty-note{color:var(--ink-muted);font-size:13px;padding:14px 4px;}
+
+  .cart-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border);}
+  .cart-row:last-child{border-bottom:none;}
+  .cart-main{flex:1;min-width:0;}
+  .cart-main strong{display:block;font-size:13.5px;}
+  .cart-main span{font-size:11.5px;color:var(--ink-muted);font-family:var(--font-mono);}
+  .cart-price{width:96px;}
+  .cart-total-row{display:flex;justify-content:space-between;align-items:center;padding-top:12px;margin-top:6px;border-top:1px solid var(--border);font-weight:700;}
+  .client-pick{display:flex;flex-direction:column;gap:8px;}
+  .client-option{
+    display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border:1px solid var(--border);
+    border-radius:var(--radius-sm);cursor:pointer;font-size:13px;
+  }
+  .client-option:hover{background:var(--surface-2);}
+  .client-option.selected{border-color:var(--scan);background:var(--scan-soft);}
+  .client-option span{font-size:11.5px;color:var(--ink-muted);}
+
+  /* ---------- Tables ---------- */
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px;}
+  .toolbar input,.toolbar select{width:auto;min-width:150px;}
+  .toolbar .grow{flex:1;min-width:180px;}
+  .table-wrap{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px;}
+  thead th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);
+    padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tbody tr:hover{background:var(--surface-2);}
+  td.num,th.num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+  .row-actions{display:flex;gap:6px;justify-content:flex-end;}
+  .battery{font-family:var(--font-mono);font-size:12px;padding:2px 7px;border-radius:99px;}
+  .battery-good{background:var(--brand-soft);color:var(--brand-strong);}
+  .battery-ok{background:var(--warning-soft);color:var(--warning);}
+  .battery-low{background:var(--danger-soft);color:var(--danger);}
+
+  /* ---------- Clients ---------- */
+  .client-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+  .client-card{padding:16px 16px;cursor:pointer;transition:border-color .12s ease;}
+  .client-card:hover{border-color:var(--brand);}
+  .client-card h3{font-size:15px;margin-bottom:2px;}
+  .client-card .muted{color:var(--ink-muted);font-size:12.5px;margin-bottom:12px;}
+  .client-card .stats{display:flex;gap:16px;}
+  .client-card .stats div{display:flex;flex-direction:column;}
+  .client-card .stats strong{font-family:var(--font-mono);font-size:16px;}
+  .client-card .stats span{font-size:10.5px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;}
+
+  /* ---------- Sales ---------- */
+  .sale-card{padding:14px 16px;margin-bottom:10px;}
+  .sale-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:10px;}
+  .sale-head-left strong{display:block;font-size:14px;}
+  .sale-head-left span{font-size:12px;color:var(--ink-muted);}
+  .sale-head-right{text-align:right;}
+  .sale-head-right strong{font-family:var(--font-mono);font-size:15px;}
+  .sale-items{margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);display:none;}
+  .sale-card.open .sale-items{display:block;}
+  .sale-item-row{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;color:var(--ink-muted);}
+  .sale-item-row span:first-child{color:var(--ink);font-family:var(--font-mono);}
+
+  /* ---------- Reports ---------- */
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px;}
+  .stat-tile{padding:16px;}
+  .stat-tile span{display:block;font-size:11px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:6px;}
+  .stat-tile strong{font-family:var(--font-mono);font-size:22px;font-weight:600;}
+  .report-grid{display:grid;grid-template-columns:1fr;gap:16px;}
+  @media (min-width:980px){ .report-grid{grid-template-columns:1.1fr .9fr;} }
+  .report-card{padding:18px 20px;}
+  .bar-row{display:flex;align-items:center;gap:10px;padding:6px 0;}
+  .bar-label{width:118px;flex:none;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .bar-track{flex:1;height:14px;background:var(--surface-2);border-radius:4px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--brand);border-radius:4px;min-width:3px;}
+  .bar-value{width:40px;flex:none;text-align:right;font-family:var(--font-mono);font-size:12px;color:var(--ink-muted);}
+  .topclients-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .topclients-row:last-child{border-bottom:none;}
+  .topclients-row span{color:var(--ink-muted);font-family:var(--font-mono);font-size:12.5px;}
+
+  /* ---------- Nav badge ---------- */
+  .nav-badge{margin-left:auto;background:var(--scan);color:#fff;font-size:10.5px;font-weight:700;border-radius:99px;padding:1px 7px;line-height:1.5;}
+  .nav-badge[hidden]{display:none;}
+
+  /* ---------- Seguimientos ---------- */
+  .followup-card{padding:14px 16px;margin-bottom:10px;}
+  .followup-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;}
+  .followup-head strong{display:block;font-size:14px;}
+  .followup-head span{font-size:12px;color:var(--ink-muted);}
+  .pill-days{background:var(--warning-soft);color:var(--warning);}
+  .followup-textarea{width:100%;min-height:64px;margin-bottom:10px;font-size:13px;}
+  .followup-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+  /* ---------- Remito ---------- */
+  #remitoText{min-height:220px;white-space:pre-wrap;}
+
+  /* ---------- Modal ---------- */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(12,16,17,.5);display:flex;align-items:flex-start;justify-content:center;
+    padding:6vh 16px;z-index:90;overflow-y:auto;
+  }
+  .modal-overlay[hidden]{display:none;}
+  .modal{background:var(--surface);border-radius:var(--radius);max-width:520px;width:100%;padding:22px 22px 20px;box-shadow:var(--shadow);}
+  .modal h2{font-size:17px;margin-bottom:16px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px;}
+
+  /* ---------- Responsive ---------- */
+  @media (max-width:760px){
+    .app{flex-direction:column;}
+    .sidebar{
+      width:100%;height:auto;position:sticky;top:0;flex-direction:row;align-items:center;padding:10px 12px;
+      overflow-x:auto;z-index:40;
+    }
+    .brand{padding:0;}
+    .brand-text{display:none;}
+    .nav{flex-direction:row;}
+    .nav-item span{display:none;}
+    .sidebar-spacer{display:none;}
+    .sidebar-stat{flex-direction:row;align-items:center;gap:6px;padding:8px 12px;}
+    .sidebar-stat-value{font-size:15px;}
+    .sidebar-banner{display:none;}
+    .main{padding:18px 16px 50px;}
+    .field-row,.field-row3{grid-template-columns:1fr;}
+  }
+</style>
+
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">SV</div>
+      <div class="brand-text">
+        <strong>Sava Stock</strong>
+        <span>Control mayorista · IMEI</span>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="scan" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M11 5v14M15 5v10M18 5v14M21 5v14"/></svg>
+        <span>Escanear</span>
+      </button>
+      <button class="nav-item" data-view="stock" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+        <span>Stock</span>
+      </button>
+      <button class="nav-item" data-view="clients" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20"/><circle cx="9.5" cy="8" r="3.25"/><path d="M15.5 5.5a3 3 0 0 1 0 6M20 20v-1.3a3 3 0 0 0-2.1-2.86"/></svg>
+        <span>Clientes</span>
+      </button>
+      <button class="nav-item" data-view="sales" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l1 4H5l1-4Z"/><path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7M9 12h6M9 16h6"/></svg>
+        <span>Ventas</span>
+      </button>
+      <button class="nav-item" data-view="seguimientos" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/></svg>
+        <span>Seguimientos</span>
+        <span class="nav-badge" id="navSeguimientosBadge" hidden>0</span>
+      </button>
+      <button class="nav-item" data-view="reports" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>
+        <span>Reportes</span>
+      </button>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-stat">
+      <span class="sidebar-stat-label">En stock</span>
+      <span class="sidebar-stat-value mono" id="sidebarStockCount">0</span>
+    </div>
+    <div class="sidebar-banner" id="previewBanner" hidden>Vista de ejemplo: no se pudo conectar con la base de datos. Verificá tu conexión.</div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h1 id="viewTitle">Escanear</h1>
+      <p id="viewSubtitle">Apuntá el lector al código de barras del IMEI.</p>
+    </header>
+
+    <!-- SCAN VIEW -->
+    <section class="view" id="view-scan">
+      <div class="mode-switch">
+        <button type="button" class="active mode-alta" id="modeAltaBtn">+ Alta de stock</button>
+        <button type="button" class="mode-venta" id="modeVentaBtn">Registrar venta</button>
+      </div>
+
+      <div class="card scan-panel">
+        <div class="scan-panel-label" id="scanPanelLabel">Escaneá el IMEI para dar de alta</div>
+        <div class="scan-input-row">
+          <input id="scanInput" class="mono" type="text" autocomplete="off" spellcheck="false" placeholder="Esperando lectura…" />
+          <button class="btn btn-scan" id="scanManualBtn" type="button">Buscar</button>
+        </div>
+        <div class="scan-hint" id="scanHint">El lector escribe el código y envía Enter automáticamente — no hace falta tocar nada más.</div>
+      </div>
+
+      <div id="quickAddSlot"></div>
+
+      <div class="scan-grid" id="scanGrid">
+        <div class="card" style="padding:16px 18px;">
+          <div class="section-title" id="activityTitle">Últimas altas</div>
+          <div class="activity-list" id="activityList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STOCK VIEW -->
+    <section class="view" id="view-stock" hidden>
+      <div class="toolbar">
+        <input type="search" id="stockSearch" placeholder="Buscar por IMEI, modelo o color…" class="grow" />
+        <select id="stockFilterStatus">
+          <option value="">Todos los estados</option>
+          <option value="in_stock">En stock</option>
+          <option value="reserved">Reservado</option>
+          <option value="sold">Vendido</option>
+        </select>
+        <select id="stockFilterModel"><option value="">Todos los modelos</option></select>
+        <button class="btn btn-primary" id="stockAddBtn" type="button">+ Agregar manual</button>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead><tr>
+            <th>IMEI</th><th>Modelo</th><th>Alm.</th><th>Color</th><th>Condición</th><th>Batería</th>
+            <th class="num">Costo</th><th class="num">Precio</th><th>Estado</th><th></th>
+          </tr></thead>
+          <tbody id="stockTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CLIENTS VIEW -->
+    <section class="view" id="view-clients" hidden>
+      <div class="toolbar">
+        <input type="search" id="clientSearch" placeholder="Buscar cliente…" class="grow" />
+        <button class="btn btn-primary" id="clientAddBtn" type="button">+ Nuevo cliente</button>
+      </div>
+      <div class="client-grid" id="clientGrid"></div>
+    </section>
+
+    <!-- SALES VIEW -->
+    <section class="view" id="view-sales" hidden>
+      <div class="toolbar">
+        <input type="search" id="salesSearch" placeholder="Buscar por cliente…" class="grow" />
+      </div>
+      <div id="salesList"></div>
+    </section>
+
+    <!-- SEGUIMIENTOS VIEW -->
+    <section class="view" id="view-seguimientos" hidden>
+      <div class="toolbar">
+        <span style="font-size:12.5px;color:var(--ink-muted);">Sin comprar hace más de</span>
+        <select id="followupThreshold">
+          <option value="15">15 días</option>
+          <option value="30" selected>30 días</option>
+          <option value="60">60 días</option>
+        </select>
+      </div>
+      <div id="followupList"></div>
+    </section>
+
+    <!-- REPORTS VIEW -->
+    <section class="view" id="view-reports" hidden>
+      <div class="stat-grid" id="statGrid"></div>
+      <div class="report-grid">
+        <div class="card report-card">
+          <div class="section-title">Stock por modelo</div>
+          <div id="modelBars"></div>
+        </div>
+        <div class="card report-card">
+          <div class="section-title">Mejores clientes</div>
+          <div id="topClients"></div>
+        </div>
+      </div>
+      <div class="card report-card" style="margin-top:16px;">
+        <div class="section-title">Ventas — últimos 14 días</div>
+        <div id="salesChart"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" hidden>
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============ constants ============ */
+  var MODELOS = [
+    "iPhone SE (2022)","iPhone 11","iPhone 11 Pro","iPhone 11 Pro Max",
+    "iPhone 12 mini","iPhone 12","iPhone 12 Pro","iPhone 12 Pro Max",
+    "iPhone 13 mini","iPhone 13","iPhone 13 Pro","iPhone 13 Pro Max",
+    "iPhone 14","iPhone 14 Plus","iPhone 14 Pro","iPhone 14 Pro Max",
+    "iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max",
+    "iPhone 16e","iPhone 16","iPhone 16 Plus","iPhone 16 Pro","iPhone 16 Pro Max",
+    "iPhone 17","iPhone Air","iPhone 17 Pro","iPhone 17 Pro Max","Otro / manual"
+  ];
+  var ALMACENAMIENTOS = ["64 GB","128 GB","256 GB","512 GB","1 TB","2 TB"];
+  var CONDICIONES = ["Nuevo (sellado)","Usado - Grado A (como nuevo)","Usado - Grado B (buen estado)","Usado - Grado C (con marcas)","Reacondicionado"];
+  var PROCEDENCIAS = ["Libre de fábrica","Importado USA (bloqueado)","Importado Europa","Canje / usado nacional"];
+
+  var fmtUSD = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:0});
+  var fmtUSD2 = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:2});
+  function fmtDate(iso){ try{ return new Date(iso).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}); }catch(e){ return "—"; } }
+  function fmtDateTime(iso){ try{ return new Date(iso).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return "—"; } }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function daysBetween(a,b){ return Math.floor((b-a)/(1000*60*60*24)); }
+
+  /* ---- WhatsApp helpers ---- */
+  function normalizePhoneAR(phone){
+    var digits = String(phone||"").replace(/\D/g,"");
+    if (!digits) return "";
+    if (digits.slice(0,2)==="54"){
+      if (digits.charAt(2)!=="9") digits = "549"+digits.slice(2);
+    } else if (digits.charAt(0)==="0"){
+      digits = "549"+digits.replace(/^0+/,"");
+    } else {
+      digits = "549"+digits;
+    }
+    return digits;
+  }
+  function waLink(phone, text){
+    var digits = normalizePhoneAR(phone);
+    return "https://wa.me/"+digits+"?text="+encodeURIComponent(text);
+  }
+  function buildRemitoText(sale){
+    var lines = [];
+    lines.push("*Sava Mayorista* — Remito de entrega");
+    lines.push("Remito N°: R-"+String(sale.id||"").slice(0,6).toUpperCase());
+    lines.push("Fecha: "+fmtDateTime(sale.date));
+    lines.push("Cliente: "+sale.clientName);
+    lines.push("");
+    lines.push("Equipos entregados:");
+    (sale.items||[]).forEach(function(it, i){
+      lines.push((i+1)+") "+it.modelo+" "+it.almacenamiento+" — IMEI "+it.imei+" — "+fmtUSD2.format(it.precio));
+    });
+    lines.push("");
+    lines.push("Total: "+fmtUSD2.format(sale.total));
+    if (sale.notes){ lines.push(""); lines.push("Notas: "+sale.notes); }
+    lines.push("");
+    lines.push("_Comprobante interno de entrega — no reemplaza factura._");
+    return lines.join("\n");
+  }
+  function openRemitoModal(sale, phoneOverride){
+    var client = clientsList.find(function(c){ return c.id===sale.clientId; });
+    var phone = (phoneOverride!=null && phoneOverride!=="") ? phoneOverride : (client ? client.phone : "");
+    var text = buildRemitoText(sale);
+    var body =
+      '<div class="field"><label>Mensaje (lo podés editar antes de enviar)</label><textarea id="remitoText" class="mono">'+esc(text)+'</textarea></div>'+
+      (phone ? '' : '<div class="scan-hint" style="margin-bottom:10px;">Este cliente no tiene teléfono cargado — completalo en su ficha o copiá el texto para enviarlo manualmente.</div>')+
+      '<div class="modal-actions">'+
+        '<button class="btn btn-ghost" id="remCopy" type="button">Copiar texto</button>'+
+        '<a class="btn btn-scan" id="remSend" href="'+esc(waLink(phone, text))+'" target="_blank" rel="noopener">Enviar por WhatsApp</a>'+
+      '</div>';
+    openModal("Remito — "+esc(sale.clientName), body);
+    document.getElementById("remCopy").addEventListener("click", function(){
+      var ta = document.getElementById("remitoText");
+      ta.select();
+      try{ navigator.clipboard.writeText(ta.value); }catch(e){ try{ document.execCommand("copy"); }catch(e2){} }
+      toast("Texto copiado.");
+    });
+    document.getElementById("remitoText").addEventListener("input", function(e){
+      document.getElementById("remSend").setAttribute("href", waLink(phone, e.target.value));
+    });
+  }
+
+  /* ============ state ============ */
+  var apiReady = false;
+  var pollTimer = null;
+  var stockList = [], clientsList = [], salesList = [];
+  var currentView = "scan";
+  var scanMode = "alta"; // alta | venta
+  var pendingImei = null; // imei awaiting quick-add form
+  var lastDefaults = { modelo:"iPhone 13", almacenamiento:"128 GB", condicion:"Nuevo (sellado)", procedencia:"Libre de fábrica" };
+  var cart = []; // {imei, modelo, almacenamiento, color, precio}
+  var cartClient = null; // {id,name} or null; id === "NEW" for inline new client
+  var modalOpen = false;
+
+  /* ============ toast ============ */
+  var toastTimer = null;
+  function toast(msg, danger){
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = "toast" + (danger ? " toast-danger" : "");
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.hidden = true; }, 3200);
+  }
+  function previewGuard(){
+    if (!apiReady){ toast("Vista de ejemplo — todavía no se pudo conectar con la base de datos.", true); return true; }
+    return false;
+  }
+
+  /* ============ modal ============ */
+  function openModal(titleHtml, bodyHtml){
+    document.getElementById("modalBody").innerHTML = "<h2>"+titleHtml+"</h2>"+bodyHtml;
+    document.getElementById("modalOverlay").hidden = false;
+    modalOpen = true;
+  }
+  function closeModal(){
+    document.getElementById("modalOverlay").hidden = true;
+    document.getElementById("modalBody").innerHTML = "";
+    modalOpen = false;
+    focusScanInput();
+  }
+  document.getElementById("modalOverlay").addEventListener("click", function(e){
+    if (e.target.id === "modalOverlay") closeModal();
+  });
+
+  /* ============ example / seed data (used only when db is unavailable) ============ */
+  function seedExample(){
+    var now = Date.now();
+    stockList = [
+      {id:"350123451111110",imei:"350123451111110",modelo:"iPhone 13",almacenamiento:"128 GB",color:"Medianoche",condicion:"Nuevo (sellado)",procedencia:"Libre de fábrica",bateria:null,costo:520,precio:610,status:"in_stock",addedAt:new Date(now-1000*60*40).toISOString()},
+      {id:"350123452222220",imei:"350123452222220",modelo:"iPhone 14 Pro",almacenamiento:"256 GB",color:"Morado oscuro",condicion:"Usado - Grado A (como nuevo)",procedencia:"Importado USA (bloqueado)",bateria:91,costo:680,precio:790,status:"in_stock",addedAt:new Date(now-1000*60*60*5).toISOString()},
+      {id:"350123453333330",imei:"350123453333330",modelo:"iPhone 15",almacenamiento:"128 GB",color:"Azul",condicion:"Nuevo (sellado)",procedencia:"Libre de fábrica",bateria:null,costo:640,precio:740,status:"sold",addedAt:new Date(now-1000*60*60*30).toISOString(),soldAt:new Date(now-1000*60*60*20).toISOString(),clientId:"c1",clientName:"Martín Reventas SRL",salePrecio:735,saleId:"s1"},
+      {id:"350123454444440",imei:"350123454444440",modelo:"iPhone 12",almacenamiento:"64 GB",color:"Negro",condicion:"Usado - Grado B (buen estado)",procedencia:"Canje / usado nacional",bateria:84,costo:310,precio:380,status:"in_stock",addedAt:new Date(now-1000*60*60*70).toISOString()},
+      {id:"350123455555550",imei:"350123455555550",modelo:"iPhone 16 Pro Max",almacenamiento:"512 GB",color:"Titanio natural",condicion:"Nuevo (sellado)",procedencia:"Libre de fábrica",bateria:null,costo:1120,precio:1280,status:"reserved",addedAt:new Date(now-1000*60*60*3).toISOString()}
+    ];
+    clientsList = [
+      {id:"c1",name:"Martín Reventas SRL",phone:"261 555-0110",city:"Godoy Cruz",notes:"Retira los viernes",createdAt:new Date(now-1000*60*60*24*40).toISOString()},
+      {id:"c2",name:"Cel Express (Lucía)",phone:"261 555-0134",city:"San Rafael",notes:"",createdAt:new Date(now-1000*60*60*24*12).toISOString()}
+    ];
+    salesList = [
+      {id:"s1",clientId:"c1",clientName:"Martín Reventas SRL",date:new Date(now-1000*60*60*20).toISOString(),items:[{imei:"350123453333330",modelo:"iPhone 15",almacenamiento:"128 GB",precio:735}],total:735,notes:""}
+    ];
+  }
+
+  /* ============ data access layer (Supabase — REST vía supabase-js, hosteado en GitHub Pages) ============ */
+  var sb = (window.supabase && window.SAVA_SUPABASE_URL && window.SAVA_SUPABASE_ANON_KEY)
+    ? window.supabase.createClient(window.SAVA_SUPABASE_URL, window.SAVA_SUPABASE_ANON_KEY)
+    : null;
+  function newId_(){
+    return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now())+"-"+Math.random().toString(16).slice(2));
+  }
+  function apiList(collection){
+    if (!sb) return Promise.reject(new Error("Supabase no está configurado (falta URL/clave)."));
+    return sb.from(collection).select("*").then(function(res){
+      if (res.error) throw new Error(res.error.message);
+      return res.data || [];
+    });
+  }
+  function apiCreate(collection, data){
+    if (!sb) return Promise.reject(new Error("Supabase no está configurado (falta URL/clave)."));
+    var row = Object.assign({}, data);
+    if (!row.id) row.id = newId_();
+    return sb.from(collection).insert(row).then(function(res){
+      if (res.error) throw new Error(res.error.message);
+      return { id: row.id };
+    });
+  }
+  function apiUpdate(collection, id, data){
+    if (!sb) return Promise.reject(new Error("Supabase no está configurado (falta URL/clave)."));
+    return sb.from(collection).update(data).eq("id", id).then(function(res){
+      if (res.error) throw new Error(res.error.message);
+      return { ok: true };
+    });
+  }
+  function apiDelete(collection, id){
+    if (!sb) return Promise.reject(new Error("Supabase no está configurado (falta URL/clave)."));
+    return sb.from(collection).delete().eq("id", id).then(function(res){
+      if (res.error) throw new Error(res.error.message);
+      return { ok: true };
+    });
+  }
+
+  function toNum_(v){ return (v===""||v==null) ? null : Number(v); }
+  function normalizeStockRow_(o){
+    o.costo = toNum_(o.costo); o.precio = toNum_(o.precio); o.bateria = toNum_(o.bateria); o.salePrecio = toNum_(o.salePrecio);
+    return o;
+  }
+  function normalizeSaleRow_(o){
+    var items = [];
+    try{ items = JSON.parse(o.itemsJson||"[]"); }catch(e){ items = []; }
+    return {id:o.id, clientId:o.clientId, clientName:o.clientName, date:o.date, items:items, total:Number(o.total)||0, notes:o.notes||""};
+  }
+
+  function refreshAll(){
+    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales")]).then(function(results){
+      stockList = results[0].map(normalizeStockRow_).sort(function(a,b){ return (b.addedAt||"").localeCompare(a.addedAt||""); });
+      clientsList = results[1].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+      salesList = results[2].map(normalizeSaleRow_).sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+      apiReady = true;
+      document.getElementById("previewBanner").hidden = true;
+      renderCurrentView(); renderSidebarCount();
+      return true;
+    }).catch(function(err){
+      if (!apiReady){ seedExample(); showPreviewBanner(); renderCurrentView(); renderSidebarCount(); }
+      else { toast("No se pudo actualizar: "+err.message, true); }
+      return false;
+    });
+  }
+
+  function initDb(){
+    refreshAll();
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(refreshAll, 20000);
+  }
+  function showPreviewBanner(){ document.getElementById("previewBanner").hidden = false; }
+
+  /* ============ stock actions ============ */
+  function findStock(imei){ for (var i=0;i<stockList.length;i++){ if (stockList[i].imei===imei) return stockList[i]; } return null; }
+
+  function sanitizeImei(raw){
+    return String(raw||"").trim().replace(/[^A-Za-z0-9_\-.~:@+]/g,"").slice(0,120);
+  }
+
+  function addStock(data){
+    if (previewGuard()) return Promise.reject();
+    if (stockList.some(function(u){ return u.imei===data.imei; })){
+      toast("Ese IMEI ya está cargado en el stock.", true);
+      return Promise.reject("dup");
+    }
+    var body = {
+      id:data.imei, imei:data.imei, modelo:data.modelo, almacenamiento:data.almacenamiento, color:data.color||"",
+      condicion:data.condicion, procedencia:data.procedencia, bateria:data.bateria,
+      costo:data.costo, precio:data.precio, notas:data.notas||"", status:"in_stock",
+      addedAt:new Date().toISOString()
+    };
+    return apiCreate("stock", body).then(function(r){ refreshAll(); return r; });
+  }
+
+  function updateStock(imei, patch){
+    if (previewGuard()) return Promise.reject();
+    return apiUpdate("stock", imei, patch).then(function(r){ refreshAll(); return r; });
+  }
+
+  function deleteStock(imei){
+    if (previewGuard()) return Promise.reject();
+    return apiDelete("stock", imei).then(function(r){ refreshAll(); return r; });
+  }
+
+  function addClient(data){
+    if (previewGuard()) return Promise.reject();
+    var body = { name:data.name, phone:data.phone||"", city:data.city||"", notes:data.notes||"",
+      createdAt:new Date().toISOString(), lastContactedAt:"" };
+    return apiCreate("clients", body).then(function(r){ refreshAll(); return {id:r.id}; });
+  }
+
+  function updateClient(id, patch){
+    if (previewGuard()) return Promise.reject();
+    return apiUpdate("clients", id, patch).then(function(r){ refreshAll(); return r; });
+  }
+  function deleteClient(id){
+    if (previewGuard()) return Promise.reject();
+    return apiDelete("clients", id).then(function(r){ refreshAll(); return r; });
+  }
+
+  function confirmSale(items, client, notes){
+    if (previewGuard()) return Promise.reject();
+    var total = items.reduce(function(s,it){ return s + (Number(it.precio)||0); },0);
+    var date = new Date().toISOString();
+    var normItems = items.map(function(it){ return {imei:it.imei, modelo:it.modelo, almacenamiento:it.almacenamiento, precio:Number(it.precio)||0}; });
+    var saleBody = {
+      clientId: client.id, clientName: client.name, date:date,
+      itemsJson: JSON.stringify(normItems),
+      total: total, notes: notes||""
+    };
+    return apiCreate("sales", saleBody).then(function(ref){
+      var updates = items.map(function(it){
+        return apiUpdate("stock", it.imei, {
+          status:"sold", soldAt:date, clientId:client.id, clientName:client.name,
+          salePrecio:Number(it.precio)||0, saleId:ref.id
+        });
+      });
+      return Promise.all(updates).then(function(){
+        refreshAll();
+        return {id:ref.id, clientId:saleBody.clientId, clientName:saleBody.clientName, date:date, items:normItems, total:total, notes:saleBody.notes};
+      });
+    });
+  }
+
+  /* ============ nav ============ */
+  var VIEW_META = {
+    scan:{title:"Escanear", sub:"Apuntá el lector al código de barras del IMEI."},
+    stock:{title:"Stock", sub:"Inventario completo de unidades, en stock y vendidas."},
+    clients:{title:"Clientes", sub:"Revendedores y su historial de compras."},
+    sales:{title:"Ventas", sub:"Historial de pedidos confirmados."},
+    seguimientos:{title:"Seguimientos", sub:"Clientes para recontactar por WhatsApp."},
+    reports:{title:"Reportes", sub:"Estado del inventario y desempeño de ventas."}
+  };
+  function setView(view){
+    currentView = view;
+    document.querySelectorAll(".nav-item").forEach(function(b){ b.classList.toggle("active", b.dataset.view===view); });
+    document.querySelectorAll(".view").forEach(function(s){ s.hidden = (s.id !== "view-"+view); });
+    document.getElementById("viewTitle").textContent = VIEW_META[view].title;
+    document.getElementById("viewSubtitle").textContent = VIEW_META[view].sub;
+    renderCurrentView();
+    if (view === "scan") focusScanInput();
+  }
+  document.getElementById("nav").addEventListener("click", function(e){
+    var btn = e.target.closest(".nav-item");
+    if (btn) setView(btn.dataset.view);
+  });
+
+  function renderCurrentView(){
+    if (currentView==="scan") renderScan();
+    else if (currentView==="stock") renderStock();
+    else if (currentView==="clients") renderClients();
+    else if (currentView==="sales") renderSales();
+    else if (currentView==="seguimientos") renderSeguimientos();
+    else if (currentView==="reports") renderReports();
+  }
+  function renderSidebarCount(){
+    var n = stockList.filter(function(u){ return u.status==="in_stock"; }).length;
+    document.getElementById("sidebarStockCount").textContent = n;
+    updateFollowupBadge();
+  }
+
+  /* ============ SCAN VIEW ============ */
+  var scanInput = document.getElementById("scanInput");
+  function focusScanInput(){
+    if (currentView==="scan" && !modalOpen){ scanInput.focus(); scanInput.select(); }
+  }
+  document.addEventListener("visibilitychange", focusScanInput);
+  document.getElementById("app").addEventListener("click", function(e){
+    if (currentView==="scan" && !modalOpen && !e.target.closest("input,select,textarea,button,.client-option")) focusScanInput();
+  });
+
+  document.getElementById("modeAltaBtn").addEventListener("click", function(){ setScanMode("alta"); });
+  document.getElementById("modeVentaBtn").addEventListener("click", function(){ setScanMode("venta"); });
+  function setScanMode(mode){
+    scanMode = mode; pendingImei = null;
+    document.getElementById("modeAltaBtn").classList.toggle("active", mode==="alta");
+    document.getElementById("modeVentaBtn").classList.toggle("active", mode==="venta");
+    document.getElementById("scanPanelLabel").textContent = mode==="alta" ? "Escaneá el IMEI para dar de alta" : "Escaneá el IMEI para agregarlo a la venta";
+    document.getElementById("quickAddSlot").innerHTML = "";
+    renderScan();
+    focusScanInput();
+  }
+
+  function handleScanSubmit(){
+    var raw = sanitizeImei(scanInput.value);
+    scanInput.value = "";
+    if (!raw) return;
+    if (scanMode==="alta") handleAltaScan(raw); else handleVentaScan(raw);
+  }
+  scanInput.addEventListener("keydown", function(e){
+    if (e.key==="Enter"){ e.preventDefault(); handleScanSubmit(); }
+  });
+  document.getElementById("scanManualBtn").addEventListener("click", handleScanSubmit);
+
+  function handleAltaScan(imei){
+    var existing = findStock(imei);
+    if (existing){
+      toast((existing.status==="sold" ? "Ese IMEI ya fue vendido" : "Ese IMEI ya está en stock") + " — "+existing.modelo+" "+existing.almacenamiento, true);
+      focusScanInput();
+      return;
+    }
+    pendingImei = imei;
+    renderQuickAdd();
+  }
+
+  function handleVentaScan(imei){
+    var unit = findStock(imei);
+    if (!unit){ toast("IMEI no encontrado en el stock.", true); focusScanInput(); return; }
+    if (unit.status!=="in_stock"){
+      toast(unit.status==="sold" ? "Esa unidad ya fue vendida ("+(unit.clientName||"—")+")" : "Esa unidad está reservada.", true);
+      focusScanInput(); return;
+    }
+    if (cart.some(function(it){ return it.imei===imei; })){ toast("Ya está en el carrito.", true); focusScanInput(); return; }
+    cart.push({imei:unit.imei, modelo:unit.modelo, almacenamiento:unit.almacenamiento, color:unit.color, precio:unit.precio||unit.costo||0});
+    renderScan();
+    focusScanInput();
+  }
+
+  function renderQuickAdd(){
+    var slot = document.getElementById("quickAddSlot");
+    if (!pendingImei){ slot.innerHTML = ""; return; }
+    var d = lastDefaults;
+    slot.innerHTML =
+      '<div class="card quickadd">'+
+        '<div class="imei-echo mono">'+esc(pendingImei)+'</div>'+
+        '<div class="field-row3">'+
+          '<div class="field"><label>Modelo</label><select id="qaModelo">'+MODELOS.map(function(m){ return '<option'+(m===d.modelo?' selected':'')+'>'+esc(m)+'</option>'; }).join("")+'</select></div>'+
+          '<div class="field"><label>Almacenamiento</label><select id="qaAlm">'+ALMACENAMIENTOS.map(function(a){ return '<option'+(a===d.almacenamiento?' selected':'')+'>'+esc(a)+'</option>'; }).join("")+'</select></div>'+
+          '<div class="field"><label>Color</label><input id="qaColor" type="text" placeholder="Ej. Titanio azul" /></div>'+
+        '</div>'+
+        '<div class="field-row3">'+
+          '<div class="field"><label>Condición</label><select id="qaCond">'+CONDICIONES.map(function(c){ return '<option'+(c===d.condicion?' selected':'')+'>'+esc(c)+'</option>'; }).join("")+'</select></div>'+
+          '<div class="field"><label>Procedencia</label><select id="qaProc">'+PROCEDENCIAS.map(function(p){ return '<option'+(p===d.procedencia?' selected':'')+'>'+esc(p)+'</option>'; }).join("")+'</select></div>'+
+          '<div class="field"><label>Batería % (si es usado)</label><input id="qaBateria" type="number" min="0" max="100" placeholder="—" /></div>'+
+        '</div>'+
+        '<div class="field-row">'+
+          '<div class="field"><label>Costo (USD)</label><input id="qaCosto" type="number" min="0" step="1" /></div>'+
+          '<div class="field"><label>Precio de lista (USD)</label><input id="qaPrecio" type="number" min="0" step="1" /></div>'+
+        '</div>'+
+        '<div class="field"><label>Notas</label><input id="qaNotas" type="text" placeholder="Opcional" /></div>'+
+        '<div class="modal-actions">'+
+          '<button class="btn btn-ghost" id="qaCancel" type="button">Cancelar</button>'+
+          '<button class="btn btn-primary" id="qaSave" type="button">Guardar en stock</button>'+
+        '</div>'+
+      '</div>';
+    document.getElementById("qaCancel").addEventListener("click", function(){ pendingImei=null; renderQuickAdd(); focusScanInput(); });
+    document.getElementById("qaSave").addEventListener("click", function(){
+      var data = {
+        imei: pendingImei,
+        modelo: document.getElementById("qaModelo").value,
+        almacenamiento: document.getElementById("qaAlm").value,
+        color: document.getElementById("qaColor").value,
+        condicion: document.getElementById("qaCond").value,
+        procedencia: document.getElementById("qaProc").value,
+        bateria: document.getElementById("qaBateria").value ? Number(document.getElementById("qaBateria").value) : null,
+        costo: document.getElementById("qaCosto").value ? Number(document.getElementById("qaCosto").value) : null,
+        precio: document.getElementById("qaPrecio").value ? Number(document.getElementById("qaPrecio").value) : null,
+        notas: document.getElementById("qaNotas").value
+      };
+      lastDefaults = {modelo:data.modelo, almacenamiento:data.almacenamiento, condicion:data.condicion, procedencia:data.procedencia};
+      addStock(data).then(function(){
+        toast("✔ Agregado — "+data.modelo+" "+data.almacenamiento);
+        pendingImei = null; renderQuickAdd(); focusScanInput();
+      }).catch(function(){ focusScanInput(); });
+    });
+  }
+
+  function renderScan(){
+    var grid = document.getElementById("scanGrid");
+    document.getElementById("scanHint").textContent = scanMode==="alta"
+      ? "El lector escribe el código y envía Enter automáticamente — no hace falta tocar nada más."
+      : "Escaneá cada unidad para sumarla a la venta. Elegí el cliente antes de confirmar.";
+    renderQuickAdd();
+
+    if (scanMode==="alta"){
+      grid.className = "scan-grid";
+      document.getElementById("activityTitle") && (document.getElementById("activityTitle").textContent = "Últimas altas");
+      var recent = stockList.slice().sort(function(a,b){ return new Date(b.addedAt)-new Date(a.addedAt); }).slice(0,8);
+      var list = document.getElementById("activityList");
+      list.innerHTML = recent.length ? recent.map(function(u){
+        return '<div class="activity-row"><div class="activity-main"><strong>'+esc(u.modelo)+' '+esc(u.almacenamiento)+'</strong>'+
+          '<span>'+esc(u.color||"")+(u.color?" · ":"")+esc(u.condicion)+'</span></div>'+
+          '<div class="activity-imei mono">'+esc(u.imei)+'</div>'+
+          '<span class="pill pill-'+(u.status==='in_stock'?'stock':u.status==='sold'?'sold':'reserved')+'">'+(u.status==='in_stock'?'En stock':u.status==='sold'?'Vendido':'Reservado')+'</span></div>';
+      }).join("") : '<div class="empty-note">Todavía no escaneaste ninguna unidad. Apuntá el lector y probá con un IMEI.</div>';
+    } else {
+      grid.className = "scan-grid venta";
+      grid.innerHTML =
+        '<div class="card" style="padding:16px 18px;">'+
+          '<div class="section-title">Carrito de venta ('+cart.length+')</div>'+
+          '<div id="cartList"></div>'+
+        '</div>'+
+        '<div class="card" style="padding:16px 18px;">'+
+          '<div class="section-title">Cliente</div>'+
+          '<div id="clientPick"></div>'+
+          '<div class="field" style="margin-top:12px;"><label>Notas de la venta</label><input id="saleNotes" type="text" placeholder="Opcional" /></div>'+
+          '<div class="cart-total-row"><span>Total</span><span class="mono" id="cartTotal">'+fmtUSD.format(0)+'</span></div>'+
+          '<button class="btn btn-scan" id="confirmSaleBtn" type="button" style="width:100%;margin-top:12px;" disabled>Confirmar venta</button>'+
+        '</div>';
+      renderCart();
+      renderClientPick();
+      document.getElementById("confirmSaleBtn").addEventListener("click", onConfirmSale);
+    }
+  }
+
+  function renderCart(){
+    var el = document.getElementById("cartList");
+    if (!el) return;
+    if (!cart.length){ el.innerHTML = '<div class="empty-note">Escaneá unidades en stock para sumarlas acá.</div>'; }
+    else {
+      el.innerHTML = cart.map(function(it,idx){
+        return '<div class="cart-row"><div class="cart-main"><strong>'+esc(it.modelo)+' '+esc(it.almacenamiento)+'</strong><span>'+esc(it.imei)+'</span></div>'+
+          '<input class="cart-price mono" type="number" min="0" step="1" value="'+(it.precio||0)+'" data-idx="'+idx+'" />'+
+          '<button class="btn btn-ghost btn-sm" data-remove="'+idx+'" type="button">Quitar</button></div>';
+      }).join("");
+      el.querySelectorAll("[data-idx]").forEach(function(inp){
+        inp.addEventListener("input", function(){ cart[Number(inp.dataset.idx)].precio = Number(inp.value)||0; updateCartTotal(); });
+      });
+      el.querySelectorAll("[data-remove]").forEach(function(btn){
+        btn.addEventListener("click", function(){ cart.splice(Number(btn.dataset.remove),1); renderScan(); focusScanInput(); });
+      });
+    }
+    updateCartTotal();
+    updateConfirmState();
+  }
+  function updateCartTotal(){
+    var total = cart.reduce(function(s,it){ return s+(Number(it.precio)||0); },0);
+    var t = document.getElementById("cartTotal"); if (t) t.textContent = fmtUSD.format(total);
+  }
+  function updateConfirmState(){
+    var btn = document.getElementById("confirmSaleBtn");
+    if (btn) btn.disabled = !(cart.length && cartClient);
+  }
+
+  function renderClientPick(){
+    var el = document.getElementById("clientPick");
+    if (!el) return;
+    var html = '<div class="client-pick">';
+    clientsList.forEach(function(c){
+      html += '<div class="client-option'+(cartClient && cartClient.id===c.id ? ' selected':'')+'" data-id="'+esc(c.id)+'">'+esc(c.name)+'<span>'+esc(c.city||"")+'</span></div>';
+    });
+    html += '<div class="client-option'+(cartClient && cartClient.id==="NEW" ? ' selected':'')+'" data-id="NEW">+ Cliente nuevo<span></span></div>';
+    html += '</div><div id="newClientFields"></div>';
+    el.innerHTML = html;
+    el.querySelectorAll(".client-option").forEach(function(opt){
+      opt.addEventListener("click", function(){
+        var id = opt.dataset.id;
+        if (id==="NEW"){
+          cartClient = {id:"NEW", name:""};
+          renderClientPick();
+          var nf = document.getElementById("newClientFields");
+          nf.innerHTML = '<div class="field" style="margin-top:8px;"><label>Nombre</label><input id="ncName" type="text" placeholder="Nombre del revendedor" /></div>'+
+            '<div class="field-row"><div class="field"><label>Teléfono (WhatsApp)</label><input id="ncPhone" type="text" placeholder="261 555-0110" /></div><div class="field"><label>Ciudad</label><input id="ncCity" type="text" /></div></div>';
+          document.getElementById("ncName").addEventListener("input", function(e){ cartClient.name = e.target.value; updateConfirmState(); });
+        } else {
+          var c = clientsList.find(function(x){ return x.id===id; });
+          cartClient = c ? {id:c.id, name:c.name} : null;
+          renderClientPick();
+        }
+        updateConfirmState();
+      });
+    });
+  }
+
+  function onConfirmSale(){
+    if (!cart.length || !cartClient) return;
+    if (cartClient.id==="NEW" && !cartClient.name){ toast("Escribí el nombre del cliente nuevo.", true); return; }
+    var notes = document.getElementById("saleNotes") ? document.getElementById("saleNotes").value : "";
+    var newPhone = document.getElementById("ncPhone") ? document.getElementById("ncPhone").value : "";
+    var newCity = document.getElementById("ncCity") ? document.getElementById("ncCity").value : "";
+    var proceed = function(client, phoneForRemito){
+      confirmSale(cart, client, notes).then(function(sale){
+        toast("✔ Venta registrada — "+cart.length+" unidad(es), "+client.name);
+        cart = []; cartClient = null; renderScan(); focusScanInput();
+        openRemitoModal(sale, phoneForRemito);
+      }).catch(function(){});
+    };
+    if (cartClient.id==="NEW"){
+      addClient({name:cartClient.name, phone:newPhone, city:newCity}).then(function(ref){ proceed({id:ref.id, name:cartClient.name}, newPhone); });
+    } else {
+      var existing = clientsList.find(function(c){ return c.id===cartClient.id; });
+      proceed(cartClient, existing ? existing.phone : "");
+    }
+  }
+
+  /* ============ STOCK VIEW ============ */
+  function renderStock(){
+    var filterSel = document.getElementById("stockFilterModel");
+    var models = Array.from(new Set(stockList.map(function(u){ return u.modelo; }))).sort();
+    var curVal = filterSel.value;
+    filterSel.innerHTML = '<option value="">Todos los modelos</option>'+models.map(function(m){ return '<option'+(m===curVal?' selected':'')+'>'+esc(m)+'</option>'; }).join("");
+
+    var q = (document.getElementById("stockSearch").value||"").toLowerCase();
+    var statusF = document.getElementById("stockFilterStatus").value;
+    var modelF = filterSel.value;
+
+    var rows = stockList.filter(function(u){
+      if (statusF && u.status!==statusF) return false;
+      if (modelF && u.modelo!==modelF) return false;
+      if (q && !((u.imei||"").toLowerCase().indexOf(q)>-1 || (u.modelo||"").toLowerCase().indexOf(q)>-1 || (u.color||"").toLowerCase().indexOf(q)>-1)) return false;
+      return true;
+    });
+
+    var body = document.getElementById("stockTableBody");
+    if (!rows.length){ body.innerHTML = '<tr><td colspan="10"><div class="empty-note">No hay unidades que coincidan.</div></td></tr>'; return; }
+    body.innerHTML = rows.map(function(u){
+      var pillClass = u.status==="in_stock" ? "pill-stock" : (u.status==="sold" ? "pill-sold" : "pill-reserved");
+      var pillLabel = u.status==="in_stock" ? "En stock" : (u.status==="sold" ? "Vendido" : "Reservado");
+      var batHtml = "—";
+      if (u.bateria!=null && u.bateria!==""){
+        var bc = u.bateria>=90 ? "battery-good" : (u.bateria>=80 ? "battery-ok" : "battery-low");
+        batHtml = '<span class="battery '+bc+'">'+u.bateria+'%</span>';
+      }
+      return '<tr>'+
+        '<td class="mono">'+esc(u.imei)+'</td>'+
+        '<td>'+esc(u.modelo)+'</td>'+
+        '<td>'+esc(u.almacenamiento||"—")+'</td>'+
+        '<td>'+esc(u.color||"—")+'</td>'+
+        '<td>'+esc(u.condicion||"—")+'</td>'+
+        '<td>'+batHtml+'</td>'+
+        '<td class="num">'+(u.costo!=null?fmtUSD.format(u.costo):"—")+'</td>'+
+        '<td class="num">'+(u.precio!=null?fmtUSD.format(u.precio):"—")+'</td>'+
+        '<td><span class="pill '+pillClass+'">'+pillLabel+'</span></td>'+
+        '<td><div class="row-actions">'+
+          '<button class="btn btn-ghost btn-sm" data-edit="'+esc(u.imei)+'" type="button">Editar</button>'+
+          '<button class="btn btn-danger btn-sm" data-del="'+esc(u.imei)+'" type="button">Borrar</button>'+
+        '</div></td>'+
+      '</tr>';
+    }).join("");
+
+    body.querySelectorAll("[data-edit]").forEach(function(b){ b.addEventListener("click", function(){ openEditStock(b.dataset.edit); }); });
+    body.querySelectorAll("[data-del]").forEach(function(b){ b.addEventListener("click", function(){
+      if (confirm("¿Borrar esta unidad del stock? Esta acción no se puede deshacer.")) deleteStock(b.dataset.del).then(function(){ toast("Unidad eliminada."); });
+    }); });
+  }
+  ["stockSearch","stockFilterStatus","stockFilterModel"].forEach(function(id){
+    document.getElementById(id).addEventListener("input", renderStock);
+    document.getElementById(id).addEventListener("change", renderStock);
+  });
+  document.getElementById("stockAddBtn").addEventListener("click", function(){ openEditStock(null); });
+
+  function openEditStock(imei){
+    var u = imei ? findStock(imei) : null;
+    var d = u || {modelo:lastDefaults.modelo, almacenamiento:lastDefaults.almacenamiento, condicion:lastDefaults.condicion, procedencia:lastDefaults.procedencia};
+    openModal(u ? "Editar unidad" : "Agregar unidad manualmente",
+      '<div class="field"><label>IMEI</label><input id="mImei" class="mono" type="text" value="'+esc(u?u.imei:"")+'" '+(u?'readonly':'')+' placeholder="Escribí o pegá el IMEI" /></div>'+
+      '<div class="field-row3">'+
+        '<div class="field"><label>Modelo</label><select id="mModelo">'+MODELOS.map(function(m){ return '<option'+(m===d.modelo?' selected':'')+'>'+esc(m)+'</option>'; }).join("")+'</select></div>'+
+        '<div class="field"><label>Almacenamiento</label><select id="mAlm">'+ALMACENAMIENTOS.map(function(a){ return '<option'+(a===d.almacenamiento?' selected':'')+'>'+esc(a)+'</option>'; }).join("")+'</select></div>'+
+        '<div class="field"><label>Color</label><input id="mColor" type="text" value="'+esc(u?u.color:"")+'" /></div>'+
+      '</div>'+
+      '<div class="field-row3">'+
+        '<div class="field"><label>Condición</label><select id="mCond">'+CONDICIONES.map(function(c){ return '<option'+(c===d.condicion?' selected':'')+'>'+esc(c)+'</option>'; }).join("")+'</select></div>'+
+        '<div class="field"><label>Procedencia</label><select id="mProc">'+PROCEDENCIAS.map(function(p){ return '<option'+(p===d.procedencia?' selected':'')+'>'+esc(p)+'</option>'; }).join("")+'</select></div>'+
+        '<div class="field"><label>Batería %</label><input id="mBateria" type="number" min="0" max="100" value="'+(u&&u.bateria!=null?u.bateria:"")+'" /></div>'+
+      '</div>'+
+      '<div class="field-row">'+
+        '<div class="field"><label>Costo (USD)</label><input id="mCosto" type="number" min="0" value="'+(u&&u.costo!=null?u.costo:"")+'" /></div>'+
+        '<div class="field"><label>Precio de lista (USD)</label><input id="mPrecio" type="number" min="0" value="'+(u&&u.precio!=null?u.precio:"")+'" /></div>'+
+      '</div>'+
+      '<div class="field"><label>Estado</label><select id="mStatus">'+
+        ['in_stock','reserved','sold'].map(function(s){ var lbl = s==='in_stock'?'En stock':s==='reserved'?'Reservado':'Vendido'; return '<option value="'+s+'"'+((u?u.status:'in_stock')===s?' selected':'')+'>'+lbl+'</option>'; }).join("")+
+      '</select></div>'+
+      '<div class="field"><label>Notas</label><input id="mNotas" type="text" value="'+esc(u?u.notas:"")+'" /></div>'+
+      '<div class="modal-actions"><button class="btn btn-ghost" id="mCancel" type="button">Cancelar</button><button class="btn btn-primary" id="mSave" type="button">Guardar</button></div>'
+    );
+    document.getElementById("mCancel").addEventListener("click", closeModal);
+    document.getElementById("mSave").addEventListener("click", function(){
+      var imeiVal = sanitizeImei(document.getElementById("mImei").value);
+      if (!imeiVal){ toast("Ingresá un IMEI.", true); return; }
+      var data = {
+        modelo: document.getElementById("mModelo").value,
+        almacenamiento: document.getElementById("mAlm").value,
+        color: document.getElementById("mColor").value,
+        condicion: document.getElementById("mCond").value,
+        procedencia: document.getElementById("mProc").value,
+        bateria: document.getElementById("mBateria").value ? Number(document.getElementById("mBateria").value) : null,
+        costo: document.getElementById("mCosto").value ? Number(document.getElementById("mCosto").value) : null,
+        precio: document.getElementById("mPrecio").value ? Number(document.getElementById("mPrecio").value) : null,
+        notas: document.getElementById("mNotas").value,
+        status: document.getElementById("mStatus").value
+      };
+      if (u){
+        updateStock(u.imei, data).then(function(){ toast("Unidad actualizada."); closeModal(); });
+      } else {
+        data.imei = imeiVal;
+        addStock(data).then(function(){
+          if (data.status!=="in_stock") return updateStock(imeiVal, {status:data.status});
+        }).then(function(){ toast("Unidad agregada."); closeModal(); }).catch(function(){});
+      }
+    });
+  }
+
+  /* ============ CLIENTS VIEW ============ */
+  function clientStats(id){
+    var sales = salesList.filter(function(s){ return s.clientId===id; });
+    var units = sales.reduce(function(s,x){ return s + (x.items?x.items.length:0); },0);
+    var total = sales.reduce(function(s,x){ return s + (x.total||0); },0);
+    return {units:units, total:total, orders:sales.length};
+  }
+  function renderClients(){
+    var q = (document.getElementById("clientSearch").value||"").toLowerCase();
+    var grid = document.getElementById("clientGrid");
+    var rows = clientsList.filter(function(c){ return !q || (c.name||"").toLowerCase().indexOf(q)>-1 || (c.city||"").toLowerCase().indexOf(q)>-1; });
+    if (!rows.length){ grid.innerHTML = '<div class="empty-note">No hay clientes que coincidan. Agregá uno nuevo con el botón de arriba.</div>'; return; }
+    grid.innerHTML = rows.map(function(c){
+      var st = clientStats(c.id);
+      return '<div class="card client-card" data-id="'+esc(c.id)+'">'+
+        '<h3>'+esc(c.name)+'</h3>'+
+        '<div class="muted">'+esc(c.city||"—")+(c.phone?(' · '+esc(c.phone)):'')+'</div>'+
+        '<div class="stats"><div><strong class="mono">'+st.units+'</strong><span>Unidades</span></div><div><strong class="mono">'+fmtUSD.format(st.total)+'</strong><span>Total</span></div><div><strong class="mono">'+st.orders+'</strong><span>Pedidos</span></div></div>'+
+      '</div>';
+    }).join("");
+    grid.querySelectorAll(".client-card").forEach(function(card){
+      card.addEventListener("click", function(){ openClientDetail(card.dataset.id); });
+    });
+  }
+  document.getElementById("clientSearch").addEventListener("input", renderClients);
+  document.getElementById("clientAddBtn").addEventListener("click", function(){ openEditClient(null); });
+
+  function openClientDetail(id){
+    var c = clientsList.find(function(x){ return x.id===id; });
+    if (!c) return;
+    var sales = salesList.filter(function(s){ return s.clientId===id; });
+    var st = clientStats(id);
+    var body =
+      '<div class="stat-grid" style="margin-bottom:16px;">'+
+        '<div class="card stat-tile"><span>Unidades compradas</span><strong class="mono">'+st.units+'</strong></div>'+
+        '<div class="card stat-tile"><span>Total histórico</span><strong class="mono">'+fmtUSD.format(st.total)+'</strong></div>'+
+      '</div>'+
+      '<div class="field"><label>Teléfono</label><div class="mono">'+esc(c.phone||"—")+'</div></div>'+
+      '<div class="field"><label>Ciudad</label><div>'+esc(c.city||"—")+'</div></div>'+
+      (c.notes ? '<div class="field"><label>Notas</label><div>'+esc(c.notes)+'</div></div>' : "")+
+      '<div class="section-title" style="margin-top:14px;">Historial de compras</div>'+
+      (sales.length ? sales.map(function(s){
+        return '<div class="sale-item-row" style="border-bottom:1px solid var(--border);padding:8px 0;"><span>'+fmtDate(s.date)+' · '+(s.items?s.items.length:0)+' unidad(es)</span><span>'+fmtUSD.format(s.total)+'</span></div>';
+      }).join("") : '<div class="empty-note">Todavía no le vendiste nada.</div>')+
+      '<div class="modal-actions">'+
+        '<button class="btn btn-danger" id="cDelete" type="button">Eliminar cliente</button>'+
+        '<button class="btn btn-ghost" id="cEdit" type="button">Editar</button>'+
+        '<button class="btn btn-primary" id="cClose" type="button">Cerrar</button>'+
+      '</div>';
+    openModal(esc(c.name), body);
+    document.getElementById("cClose").addEventListener("click", closeModal);
+    document.getElementById("cEdit").addEventListener("click", function(){ openEditClient(c); });
+    document.getElementById("cDelete").addEventListener("click", function(){
+      if (st.orders>0){ toast("Este cliente tiene ventas registradas — no se puede borrar.", true); return; }
+      if (confirm("¿Eliminar a "+c.name+"?")) deleteClient(c.id).then(function(){ toast("Cliente eliminado."); closeModal(); });
+    });
+  }
+
+  function openEditClient(c){
+    openModal(c ? "Editar cliente" : "Nuevo cliente",
+      '<div class="field"><label>Nombre</label><input id="ecName" type="text" value="'+esc(c?c.name:"")+'" placeholder="Nombre o razón social" /></div>'+
+      '<div class="field-row"><div class="field"><label>Teléfono</label><input id="ecPhone" type="text" value="'+esc(c?c.phone:"")+'" /></div><div class="field"><label>Ciudad</label><input id="ecCity" type="text" value="'+esc(c?c.city:"")+'" /></div></div>'+
+      '<div class="field"><label>Notas</label><input id="ecNotes" type="text" value="'+esc(c?c.notes:"")+'" /></div>'+
+      '<div class="modal-actions"><button class="btn btn-ghost" id="ecCancel" type="button">Cancelar</button><button class="btn btn-primary" id="ecSave" type="button">Guardar</button></div>'
+    );
+    document.getElementById("ecCancel").addEventListener("click", closeModal);
+    document.getElementById("ecSave").addEventListener("click", function(){
+      var name = document.getElementById("ecName").value.trim();
+      if (!name){ toast("Ingresá un nombre.", true); return; }
+      var data = {name:name, phone:document.getElementById("ecPhone").value, city:document.getElementById("ecCity").value, notes:document.getElementById("ecNotes").value};
+      var p = c ? updateClient(c.id, data) : addClient(data);
+      p.then(function(){ toast("Cliente guardado."); closeModal(); }).catch(function(){});
+    });
+  }
+
+  /* ============ SALES VIEW ============ */
+  function renderSales(){
+    var q = (document.getElementById("salesSearch").value||"").toLowerCase();
+    var rows = salesList.filter(function(s){ return !q || (s.clientName||"").toLowerCase().indexOf(q)>-1; });
+    var el = document.getElementById("salesList");
+    if (!rows.length){ el.innerHTML = '<div class="empty-note">Todavía no hay ventas registradas.</div>'; return; }
+    el.innerHTML = rows.map(function(s){
+      return '<div class="card sale-card" data-id="'+esc(s.id)+'">'+
+        '<div class="sale-head"><div class="sale-head-left"><strong>'+esc(s.clientName)+'</strong><span>'+fmtDateTime(s.date)+' · '+(s.items?s.items.length:0)+' unidad(es)</span></div>'+
+        '<div class="sale-head-right"><strong class="mono">'+fmtUSD.format(s.total)+'</strong><div><button class="btn btn-ghost btn-sm" data-remito="'+esc(s.id)+'" type="button" style="margin-top:6px;">Remito</button></div></div></div>'+
+        '<div class="sale-items">'+(s.items||[]).map(function(it){ return '<div class="sale-item-row"><span>'+esc(it.imei)+'</span><span>'+esc(it.modelo)+' '+esc(it.almacenamiento)+' — '+fmtUSD.format(it.precio)+'</span></div>'; }).join("")+
+        (s.notes ? '<div class="sale-item-row"><span>Notas</span><span>'+esc(s.notes)+'</span></div>' : "")+
+        '</div></div>';
+    }).join("");
+    el.querySelectorAll(".sale-card").forEach(function(card){
+      card.querySelector(".sale-head").addEventListener("click", function(){ card.classList.toggle("open"); });
+    });
+    el.querySelectorAll("[data-remito]").forEach(function(btn){
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        var sale = salesList.find(function(x){ return x.id===btn.dataset.remito; });
+        if (sale) openRemitoModal(sale);
+      });
+    });
+  }
+  document.getElementById("salesSearch").addEventListener("input", renderSales);
+
+  /* ============ SEGUIMIENTOS VIEW ============ */
+  function computeFollowups(thresholdDays){
+    var now = new Date();
+    var lastPurchase = {};
+    salesList.forEach(function(s){
+      if (!s.clientId) return;
+      if (!lastPurchase[s.clientId] || new Date(s.date) > new Date(lastPurchase[s.clientId])) lastPurchase[s.clientId] = s.date;
+    });
+    return clientsList.map(function(c){
+      var last = lastPurchase[c.id] || null;
+      var baseDate = last ? new Date(last) : new Date(c.createdAt || now);
+      var days = daysBetween(baseDate, now);
+      return {client:c, lastPurchase:last, days:days, neverBought:!last};
+    }).filter(function(x){ return x.days >= thresholdDays; })
+      .sort(function(a,b){ return b.days - a.days; });
+  }
+  function defaultFollowupMessage(item){
+    var firstName = (item.client.name||"").split(" ")[0];
+    if (item.neverBought){
+      return "Hola "+firstName+"! Soy Agustín de Sava Mayorista 👋 Te dejo mi contacto por si en algún momento necesitás stock de iPhones — trabajamos precios mayoristas para revendedores. ¡Cualquier consulta, avisame!";
+    }
+    return "Hola "+firstName+"! Soy Agustín de Sava Mayorista 👋 Hace "+item.days+" días que no te paso novedades y tenemos stock nuevo. ¿Te interesa que te pase precios actualizados?";
+  }
+  function updateFollowupBadge(){
+    var sel = document.getElementById("followupThreshold");
+    var threshold = sel ? (Number(sel.value)||30) : 30;
+    var count = computeFollowups(threshold).length;
+    var badge = document.getElementById("navSeguimientosBadge");
+    if (!badge) return;
+    if (count>0){ badge.hidden=false; badge.textContent = count>99?"99+":String(count); } else { badge.hidden = true; }
+  }
+  function renderSeguimientos(){
+    var thresholdSel = document.getElementById("followupThreshold");
+    var threshold = Number(thresholdSel.value)||30;
+    var items = computeFollowups(threshold);
+    updateFollowupBadge();
+    var el = document.getElementById("followupList");
+    if (!items.length){ el.innerHTML = '<div class="empty-note">Ningún cliente pasó el umbral de '+threshold+' días. ¡Buen ritmo de ventas!</div>'; return; }
+    el.innerHTML = items.map(function(item, idx){
+      var msg = defaultFollowupMessage(item);
+      var contactedNote = item.client.lastContactedAt ? (" · Contactado hace "+daysBetween(new Date(item.client.lastContactedAt), new Date())+" día(s)") : "";
+      return '<div class="card followup-card">'+
+        '<div class="followup-head"><div><strong>'+esc(item.client.name)+'</strong><span>'+(item.neverBought ? "Nunca compró" : ("Última compra: "+fmtDate(item.lastPurchase)))+esc(contactedNote)+'</span></div>'+
+        '<span class="pill pill-days">'+item.days+' días</span></div>'+
+        '<textarea class="followup-textarea mono" data-idx="'+idx+'">'+esc(msg)+'</textarea>'+
+        '<div class="followup-actions">'+
+          '<a class="btn btn-scan btn-sm" data-send="'+idx+'" href="'+esc(waLink(item.client.phone, msg))+'" target="_blank" rel="noopener">Enviar por WhatsApp</a>'+
+          '<button class="btn btn-ghost btn-sm" data-contacted="'+esc(item.client.id)+'" type="button">Marcar contactado</button>'+
+        '</div>'+
+        (item.client.phone ? '' : '<div class="scan-hint" style="margin-top:8px;">Sin teléfono cargado — el link no va a abrir un chat. Completalo en la ficha del cliente.</div>')+
+      '</div>';
+    }).join("");
+    el.querySelectorAll("textarea[data-idx]").forEach(function(ta){
+      ta.addEventListener("input", function(){
+        var idx = Number(ta.dataset.idx);
+        var link = el.querySelector('[data-send="'+idx+'"]');
+        if (link) link.setAttribute("href", waLink(items[idx].client.phone, ta.value));
+      });
+    });
+    el.querySelectorAll("[data-contacted]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        updateClient(btn.dataset.contacted, {lastContactedAt:new Date().toISOString()}).then(function(){ toast("Marcado como contactado."); }).catch(function(){});
+      });
+    });
+  }
+  document.getElementById("followupThreshold").addEventListener("change", renderSeguimientos);
+
+  /* ============ REPORTS VIEW ============ */
+  function renderReports(){
+    var inStock = stockList.filter(function(u){ return u.status==="in_stock"; });
+    var sold = stockList.filter(function(u){ return u.status==="sold"; });
+    var valorCosto = inStock.reduce(function(s,u){ return s+(u.costo||0); },0);
+    var valorPrecio = inStock.reduce(function(s,u){ return s+(u.precio||0); },0);
+    var ingresos = salesList.reduce(function(s,x){ return s+(x.total||0); },0);
+
+    document.getElementById("statGrid").innerHTML = [
+      ["Unidades en stock", inStock.length],
+      ["Valor stock (costo)", fmtUSD.format(valorCosto)],
+      ["Valor stock (lista)", fmtUSD.format(valorPrecio)],
+      ["Unidades vendidas", sold.length],
+      ["Ingresos totales", fmtUSD.format(ingresos)],
+      ["Clientes", clientsList.length]
+    ].map(function(t){ return '<div class="card stat-tile"><span>'+t[0]+'</span><strong>'+t[1]+'</strong></div>'; }).join("");
+
+    var byModel = {};
+    inStock.forEach(function(u){ byModel[u.modelo] = (byModel[u.modelo]||0)+1; });
+    var modelEntries = Object.keys(byModel).map(function(k){ return [k, byModel[k]]; }).sort(function(a,b){ return b[1]-a[1]; }).slice(0,10);
+    var maxModel = modelEntries.length ? modelEntries[0][1] : 1;
+    document.getElementById("modelBars").innerHTML = modelEntries.length ? modelEntries.map(function(e){
+      return '<div class="bar-row"><div class="bar-label" title="'+esc(e[0])+'">'+esc(e[0])+'</div><div class="bar-track"><div class="bar-fill" style="width:'+Math.max(4,(e[1]/maxModel*100))+'%"></div></div><div class="bar-value mono">'+e[1]+'</div></div>';
+    }).join("") : '<div class="empty-note">Sin stock cargado todavía.</div>';
+
+    var byClient = {};
+    salesList.forEach(function(s){ if(!byClient[s.clientId]) byClient[s.clientId]={name:s.clientName, units:0, total:0}; byClient[s.clientId].units += (s.items?s.items.length:0); byClient[s.clientId].total += (s.total||0); });
+    var topClients = Object.keys(byClient).map(function(k){ return byClient[k]; }).sort(function(a,b){ return b.total-a.total; }).slice(0,6);
+    document.getElementById("topClients").innerHTML = topClients.length ? topClients.map(function(c){
+      return '<div class="topclients-row"><span>'+esc(c.name)+'</span><span>'+c.units+' u · '+fmtUSD.format(c.total)+'</span></div>';
+    }).join("") : '<div class="empty-note">Todavía no hay ventas.</div>';
+
+    var days = [];
+    for (var i=13;i>=0;i--){ var d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-i); days.push(d); }
+    var perDay = days.map(function(d){
+      var key = d.toDateString();
+      var count = salesList.filter(function(s){ return new Date(s.date).toDateString()===key; }).reduce(function(s,x){ return s+(x.items?x.items.length:0); },0);
+      return {d:d, count:count};
+    });
+    var maxDay = Math.max(1, Math.max.apply(null, perDay.map(function(p){ return p.count; })));
+    var w=760,h=140,pad=24, bw=(w-pad*2)/perDay.length;
+    var bars = perDay.map(function(p,idx){
+      var bh = (p.count/maxDay) * (h-pad*2);
+      var x = pad + idx*bw + bw*0.18;
+      var y = h-pad-bh;
+      var lbl = p.d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"});
+      return '<g><title>'+lbl+': '+p.count+' unidad(es)</title><rect x="'+x+'" y="'+y+'" width="'+(bw*0.64)+'" height="'+Math.max(bh,1.5)+'" rx="3" fill="var(--brand)"></rect></g>';
+    }).join("");
+    var axisLabels = perDay.filter(function(_,i){ return i%2===0; }).map(function(p,i0){
+      var idx = i0*2;
+      var x = pad + idx*bw + bw*0.5;
+      return '<text x="'+x+'" y="'+(h-6)+'" font-size="9" text-anchor="middle" fill="var(--ink-muted)" font-family="var(--font-mono)">'+p.d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+'</text>';
+    }).join("");
+    document.getElementById("salesChart").innerHTML =
+      '<svg viewBox="0 0 '+w+' '+h+'" style="width:100%;height:160px;" role="img" aria-label="Unidades vendidas por día, últimos 14 días">'+
+        '<line x1="'+pad+'" y1="'+(h-pad)+'" x2="'+(w-pad)+'" y2="'+(h-pad)+'" stroke="var(--border)" stroke-width="1"></line>'+
+        bars + axisLabels +
+      '</svg>';
+  }
+
+  /* ============ boot ============ */
+  setView("scan");
+  initDb();
+  focusScanInput();
+})();
+</script>
+</body></html>
+
