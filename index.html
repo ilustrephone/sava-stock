@@ -937,7 +937,11 @@
 
     if (scanMode==="alta"){
       grid.className = "scan-grid";
-      document.getElementById("activityTitle") && (document.getElementById("activityTitle").textContent = "Últimas altas");
+      grid.innerHTML =
+        '<div class="card" style="padding:16px 18px;">'+
+          '<div class="section-title" id="activityTitle">Últimas altas</div>'+
+          '<div class="activity-list" id="activityList"></div>'+
+        '</div>';
       var recent = stockList.slice().sort(function(a,b){ return new Date(b.addedAt)-new Date(a.addedAt); }).slice(0,8);
       var list = document.getElementById("activityList");
       list.innerHTML = recent.length ? recent.map(function(u){
