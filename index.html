@@ -172,6 +172,9 @@
   .pill-stock{background:var(--brand-soft);color:var(--brand-strong);}
   .pill-sold{background:var(--info-soft);color:var(--info);}
   .pill-reserved{background:var(--warning-soft);color:var(--warning);}
+  .pill-pagado{background:var(--brand-soft);color:var(--brand-strong);}
+  .pill-pendiente{background:var(--warning-soft);color:var(--warning);}
+  .pill-vencido{background:var(--danger-soft);color:var(--danger);}
 
   .toast{
     position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);
@@ -262,6 +265,8 @@
   .client-card .stats div{display:flex;flex-direction:column;}
   .client-card .stats strong{font-family:var(--font-mono);font-size:16px;}
   .client-card .stats span{font-size:10.5px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;}
+  .client-balance{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--warning);}
+  .client-balance.overdue{color:var(--danger);}
 
   /* ---------- Sales ---------- */
   .sale-card{padding:14px 16px;margin-bottom:10px;}
@@ -364,6 +369,11 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l1 4H5l1-4Z"/><path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7M9 12h6M9 16h6"/></svg>
         <span>Ventas</span>
       </button>
+      <button class="nav-item" data-view="cuentas" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        <span>Cuentas por cobrar</span>
+        <span class="nav-badge" id="navCuentasBadge" hidden>0</span>
+      </button>
       <button class="nav-item" data-view="seguimientos" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/></svg>
         <span>Seguimientos</span>
@@ -453,6 +463,12 @@
         <input type="search" id="salesSearch" placeholder="Buscar por cliente…" class="grow" />
       </div>
       <div id="salesList"></div>
+    </section>
+
+    <!-- CUENTAS POR COBRAR VIEW -->
+    <section class="view" id="view-cuentas" hidden>
+      <div class="stat-grid" id="cuentasStatGrid" style="margin-bottom:16px;"></div>
+      <div id="cuentasList"></div>
     </section>
 
     <!-- SEGUIMIENTOS VIEW -->
@@ -684,10 +700,20 @@
     o.costo = toNum_(o.costo); o.precio = toNum_(o.precio); o.bateria = toNum_(o.bateria); o.salePrecio = toNum_(o.salePrecio);
     return o;
   }
+  function todayStr_(){ var d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
   function normalizeSaleRow_(o){
     var items = [];
     try{ items = JSON.parse(o.itemsJson||"[]"); }catch(e){ items = []; }
-    return {id:o.id, clientId:o.clientId, clientName:o.clientName, date:o.date, items:items, total:Number(o.total)||0, notes:o.notes||""};
+    var payments = [];
+    try{ payments = JSON.parse(o.paymentsJson||"[]"); }catch(e){ payments = []; }
+    var total = Number(o.total)||0;
+    var amountPaid = payments.reduce(function(s,p){ return s+(Number(p.amount)||0); },0);
+    var balance = Math.max(0, Math.round((total-amountPaid)*100)/100);
+    var dueDate = o.paymentDueDate || "";
+    var overdue = balance>0.009 && !!dueDate && dueDate < todayStr_();
+    var payStatus = balance<=0.009 ? "pagado" : (overdue ? "vencido" : "pendiente");
+    return {id:o.id, clientId:o.clientId, clientName:o.clientName, date:o.date, items:items, total:total, notes:o.notes||"",
+      paymentDueDate:dueDate, payments:payments, amountPaid:amountPaid, balance:balance, payStatus:payStatus};
   }
 
   function refreshAll(){
@@ -761,15 +787,20 @@
     return apiDelete("clients", id).then(function(r){ refreshAll(); return r; });
   }
 
-  function confirmSale(items, client, notes){
+  function confirmSale(items, client, notes, dueDate, initialPayment){
     if (previewGuard()) return Promise.reject();
     var total = items.reduce(function(s,it){ return s + (Number(it.precio)||0); },0);
     var date = new Date().toISOString();
     var normItems = items.map(function(it){ return {imei:it.imei, modelo:it.modelo, almacenamiento:it.almacenamiento, precio:Number(it.precio)||0}; });
+    var payments = [];
+    var paidNow = Number(initialPayment)||0;
+    if (paidNow > 0) payments.push({date:date, amount:paidNow, notes:"Pago inicial"});
     var saleBody = {
       clientId: client.id, clientName: client.name, date:date,
       itemsJson: JSON.stringify(normItems),
-      total: total, notes: notes||""
+      total: total, notes: notes||"",
+      paymentDueDate: dueDate || "",
+      paymentsJson: JSON.stringify(payments)
     };
     return apiCreate("sales", saleBody).then(function(ref){
       var updates = items.map(function(it){
@@ -780,9 +811,21 @@
       });
       return Promise.all(updates).then(function(){
         refreshAll();
-        return {id:ref.id, clientId:saleBody.clientId, clientName:saleBody.clientName, date:date, items:normItems, total:total, notes:saleBody.notes};
+        return {id:ref.id, clientId:saleBody.clientId, clientName:saleBody.clientName, date:date, items:normItems, total:total, notes:saleBody.notes, paymentDueDate:saleBody.paymentDueDate, payments:payments};
       });
     });
+  }
+  function addPayment(saleId, amount, note){
+    if (previewGuard()) return Promise.reject();
+    var sale = salesList.find(function(s){ return s.id===saleId; });
+    if (!sale) return Promise.reject(new Error("Venta no encontrada."));
+    var payments = (sale.payments||[]).slice();
+    payments.push({date:new Date().toISOString(), amount:Number(amount)||0, notes:note||""});
+    return apiUpdate("sales", saleId, {paymentsJson: JSON.stringify(payments)}).then(function(r){ refreshAll(); return r; });
+  }
+  function setSaleDueDate(saleId, dueDate){
+    if (previewGuard()) return Promise.reject();
+    return apiUpdate("sales", saleId, {paymentDueDate: dueDate||""}).then(function(r){ refreshAll(); return r; });
   }
 
   /* ============ nav ============ */
@@ -791,6 +834,7 @@
     stock:{title:"Stock", sub:"Inventario completo de unidades, en stock y vendidas."},
     clients:{title:"Clientes", sub:"Revendedores y su historial de compras."},
     sales:{title:"Ventas", sub:"Historial de pedidos confirmados."},
+    cuentas:{title:"Cuentas por cobrar", sub:"Saldos pendientes y fechas límite de pago."},
     seguimientos:{title:"Seguimientos", sub:"Clientes para recontactar por WhatsApp."},
     reports:{title:"Reportes", sub:"Estado del inventario y desempeño de ventas."}
   };
@@ -813,6 +857,7 @@
     else if (currentView==="stock") renderStock();
     else if (currentView==="clients") renderClients();
     else if (currentView==="sales") renderSales();
+    else if (currentView==="cuentas") renderCuentas();
     else if (currentView==="seguimientos") renderSeguimientos();
     else if (currentView==="reports") renderReports();
   }
@@ -820,6 +865,7 @@
     var n = stockList.filter(function(u){ return u.status==="in_stock"; }).length;
     document.getElementById("sidebarStockCount").textContent = n;
     updateFollowupBadge();
+    updateCuentasBadge();
   }
 
   /* ============ SCAN VIEW ============ */
@@ -882,7 +928,7 @@
   function renderQuickAdd(){
     var slot = document.getElementById("quickAddSlot");
     if (!pendingImei){ slot.innerHTML = ""; slot.removeAttribute("data-imei"); return; }
-    if (slot.dataset.imei === pendingImei) return;
+    if (slot.dataset.imei === pendingImei) return; // ya está abierta para este IMEI: no la reconstruyas (el refresco automático no debe borrar lo que se está cargando)
     var d = lastDefaults;
     slot.dataset.imei = pendingImei;
     slot.innerHTML =
@@ -939,6 +985,7 @@
 
     if (scanMode==="alta"){
       grid.className = "scan-grid";
+      grid.dataset.mode = "alta";
       grid.innerHTML =
         '<div class="card" style="padding:16px 18px;">'+
           '<div class="section-title" id="activityTitle">Últimas altas</div>'+
@@ -953,28 +1000,38 @@
           '<span class="pill pill-'+(u.status==='in_stock'?'stock':u.status==='sold'?'sold':'reserved')+'">'+(u.status==='in_stock'?'En stock':u.status==='sold'?'Vendido':'Reservado')+'</span></div>';
       }).join("") : '<div class="empty-note">Todavía no escaneaste ninguna unidad. Apuntá el lector y probá con un IMEI.</div>';
     } else {
-      grid.className = "scan-grid venta";
-      grid.innerHTML =
-        '<div class="card" style="padding:16px 18px;">'+
-          '<div class="section-title">Carrito de venta ('+cart.length+')</div>'+
-          '<div id="cartList"></div>'+
-        '</div>'+
-        '<div class="card" style="padding:16px 18px;">'+
-          '<div class="section-title">Cliente</div>'+
-          '<div id="clientPick"></div>'+
-          '<div class="field" style="margin-top:12px;"><label>Notas de la venta</label><input id="saleNotes" type="text" placeholder="Opcional" /></div>'+
-          '<div class="cart-total-row"><span>Total</span><span class="mono" id="cartTotal">'+fmtUSD.format(0)+'</span></div>'+
-          '<button class="btn btn-scan" id="confirmSaleBtn" type="button" style="width:100%;margin-top:12px;" disabled>Confirmar venta</button>'+
-        '</div>';
+      if (grid.dataset.mode !== "venta"){
+        grid.className = "scan-grid venta";
+        grid.dataset.mode = "venta";
+        grid.innerHTML =
+          '<div class="card" style="padding:16px 18px;">'+
+            '<div class="section-title">Carrito de venta (<span id="cartCount">'+cart.length+'</span>)</div>'+
+            '<div id="cartList"></div>'+
+          '</div>'+
+          '<div class="card" style="padding:16px 18px;">'+
+            '<div class="section-title">Cliente</div>'+
+            '<div id="clientPick"></div>'+
+            '<div class="field" style="margin-top:12px;"><label>Notas de la venta</label><input id="saleNotes" type="text" placeholder="Opcional" /></div>'+
+            '<div class="field-row">'+
+              '<div class="field"><label>Pago inicial (USD)</label><input id="saleInitialPayment" type="number" min="0" step="1" placeholder="0" /></div>'+
+              '<div class="field"><label>Fecha límite de pago</label><input id="saleDueDate" type="date" /></div>'+
+            '</div>'+
+            '<div class="scan-hint" style="margin:6px 0 0;">Dejá el pago inicial en 0 y sin fecha si es venta a cuenta / fiado sin plazo definido.</div>'+
+            '<div class="cart-total-row"><span>Total</span><span class="mono" id="cartTotal">'+fmtUSD.format(0)+'</span></div>'+
+            '<button class="btn btn-scan" id="confirmSaleBtn" type="button" style="width:100%;margin-top:12px;" disabled>Confirmar venta</button>'+
+          '</div>';
+        renderClientPick();
+        document.getElementById("confirmSaleBtn").addEventListener("click", onConfirmSale);
+      }
       renderCart();
-      renderClientPick();
-      document.getElementById("confirmSaleBtn").addEventListener("click", onConfirmSale);
     }
   }
 
   function renderCart(){
     var el = document.getElementById("cartList");
     if (!el) return;
+    var countEl = document.getElementById("cartCount");
+    if (countEl) countEl.textContent = cart.length;
     if (!cart.length){ el.innerHTML = '<div class="empty-note">Escaneá unidades en stock para sumarlas acá.</div>'; }
     else {
       el.innerHTML = cart.map(function(it,idx){
@@ -1037,10 +1094,14 @@
     var notes = document.getElementById("saleNotes") ? document.getElementById("saleNotes").value : "";
     var newPhone = document.getElementById("ncPhone") ? document.getElementById("ncPhone").value : "";
     var newCity = document.getElementById("ncCity") ? document.getElementById("ncCity").value : "";
+    var initialPayment = document.getElementById("saleInitialPayment") && document.getElementById("saleInitialPayment").value ? Number(document.getElementById("saleInitialPayment").value) : 0;
+    var dueDate = document.getElementById("saleDueDate") ? document.getElementById("saleDueDate").value : "";
     var proceed = function(client, phoneForRemito){
-      confirmSale(cart, client, notes).then(function(sale){
+      confirmSale(cart, client, notes, dueDate, initialPayment).then(function(sale){
         toast("✔ Venta registrada — "+cart.length+" unidad(es), "+client.name);
-        cart = []; cartClient = null; renderScan(); focusScanInput();
+        cart = []; cartClient = null;
+        var g = document.getElementById("scanGrid"); if (g) g.dataset.mode = "";
+        renderScan(); focusScanInput();
         openRemitoModal(sale, phoneForRemito);
       }).catch(function(){});
     };
@@ -1165,7 +1226,9 @@
     var sales = salesList.filter(function(s){ return s.clientId===id; });
     var units = sales.reduce(function(s,x){ return s + (x.items?x.items.length:0); },0);
     var total = sales.reduce(function(s,x){ return s + (x.total||0); },0);
-    return {units:units, total:total, orders:sales.length};
+    var balance = sales.reduce(function(s,x){ return s + (x.balance||0); },0);
+    var overdue = sales.some(function(x){ return x.payStatus==="vencido"; });
+    return {units:units, total:total, orders:sales.length, balance:balance, overdue:overdue};
   }
   function renderClients(){
     var q = (document.getElementById("clientSearch").value||"").toLowerCase();
@@ -1178,6 +1241,7 @@
         '<h3>'+esc(c.name)+'</h3>'+
         '<div class="muted">'+esc(c.city||"—")+(c.phone?(' · '+esc(c.phone)):'')+'</div>'+
         '<div class="stats"><div><strong class="mono">'+st.units+'</strong><span>Unidades</span></div><div><strong class="mono">'+fmtUSD.format(st.total)+'</strong><span>Total</span></div><div><strong class="mono">'+st.orders+'</strong><span>Pedidos</span></div></div>'+
+        (st.balance>0.009 ? '<div class="client-balance'+(st.overdue?' overdue':'')+'">Debe '+fmtUSD.format(st.balance)+(st.overdue?' · vencido':'')+'</div>' : '')+
       '</div>';
     }).join("");
     grid.querySelectorAll(".client-card").forEach(function(card){
@@ -1244,9 +1308,10 @@
     el.innerHTML = rows.map(function(s){
       return '<div class="card sale-card" data-id="'+esc(s.id)+'">'+
         '<div class="sale-head"><div class="sale-head-left"><strong>'+esc(s.clientName)+'</strong><span>'+fmtDateTime(s.date)+' · '+(s.items?s.items.length:0)+' unidad(es)</span></div>'+
-        '<div class="sale-head-right"><strong class="mono">'+fmtUSD.format(s.total)+'</strong><div><button class="btn btn-ghost btn-sm" data-remito="'+esc(s.id)+'" type="button" style="margin-top:6px;">Remito</button></div></div></div>'+
+        '<div class="sale-head-right"><strong class="mono">'+fmtUSD.format(s.total)+'</strong>'+paymentPillHtml_(s)+'<div><button class="btn btn-ghost btn-sm" data-remito="'+esc(s.id)+'" type="button" style="margin-top:6px;">Remito</button></div></div></div>'+
         '<div class="sale-items">'+(s.items||[]).map(function(it){ return '<div class="sale-item-row"><span>'+esc(it.imei)+'</span><span>'+esc(it.modelo)+' '+esc(it.almacenamiento)+' — '+fmtUSD.format(it.precio)+'</span></div>'; }).join("")+
         (s.notes ? '<div class="sale-item-row"><span>Notas</span><span>'+esc(s.notes)+'</span></div>' : "")+
+        paymentSummaryHtml_(s)+
         '</div></div>';
     }).join("");
     el.querySelectorAll(".sale-card").forEach(function(card){
@@ -1259,8 +1324,106 @@
         if (sale) openRemitoModal(sale);
       });
     });
+    bindPaymentButtons_(el);
   }
   document.getElementById("salesSearch").addEventListener("input", renderSales);
+
+  /* ============ PAGOS / SALDOS ============ */
+  function paymentPillHtml_(s){
+    if (s.total<=0.009) return "";
+    var label = s.payStatus==="pagado" ? "Pagado" : (s.payStatus==="vencido" ? "Vencido" : "Pendiente");
+    return '<span class="pill pill-'+s.payStatus+'" style="margin-top:6px;">'+label+'</span>';
+  }
+  function paymentSummaryHtml_(s){
+    if (s.total<=0.009) return "";
+    var rows = '<div class="sale-item-row"><span>Saldo</span><span class="mono">'+(s.balance>0.009?fmtUSD.format(s.balance):"Sin saldo")+'</span></div>';
+    if (s.paymentDueDate) rows += '<div class="sale-item-row"><span>Vence</span><span>'+esc(s.paymentDueDate.split("-").reverse().join("/"))+'</span></div>';
+    if (s.payments && s.payments.length){
+      rows += s.payments.map(function(p){ return '<div class="sale-item-row"><span>Pago '+fmtDate(p.date)+(p.notes?" · "+esc(p.notes):"")+'</span><span class="mono">'+fmtUSD.format(p.amount)+'</span></div>'; }).join("");
+    }
+    if (s.balance>0.009){
+      rows += '<div class="modal-actions" style="justify-content:flex-end;margin-top:10px;"><button class="btn btn-primary btn-sm" data-pay="'+esc(s.id)+'" type="button">Registrar pago</button></div>';
+    }
+    return rows;
+  }
+  function bindPaymentButtons_(container){
+    container.querySelectorAll("[data-pay]").forEach(function(btn){
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        var sale = salesList.find(function(x){ return x.id===btn.dataset.pay; });
+        if (sale) openPaymentModal(sale);
+      });
+    });
+  }
+  function openPaymentModal(sale){
+    var body =
+      '<div class="stat-grid" style="margin-bottom:14px;">'+
+        '<div class="card stat-tile"><span>Total del pedido</span><strong class="mono">'+fmtUSD.format(sale.total)+'</strong></div>'+
+        '<div class="card stat-tile"><span>Saldo pendiente</span><strong class="mono">'+fmtUSD.format(sale.balance)+'</strong></div>'+
+      '</div>'+
+      '<div class="field-row"><div class="field"><label>Monto a registrar (USD)</label><input id="payAmount" type="number" min="0" max="'+sale.balance+'" step="1" value="'+sale.balance+'" /></div>'+
+      '<div class="field"><label>Fecha límite de pago</label><input id="payDueDate" type="date" value="'+esc(sale.paymentDueDate||"")+'" /></div></div>'+
+      '<div class="field"><label>Nota (opcional)</label><input id="payNote" type="text" placeholder="Ej. transferencia, efectivo…" /></div>'+
+      '<div class="modal-actions">'+
+        '<button class="btn btn-ghost" id="payCancel" type="button">Cancelar</button>'+
+        '<button class="btn btn-ghost" id="payDueSave" type="button">Solo actualizar fecha</button>'+
+        '<button class="btn btn-primary" id="paySave" type="button">Registrar pago</button>'+
+      '</div>';
+    openModal("Pago — "+esc(sale.clientName), body);
+    document.getElementById("payCancel").addEventListener("click", closeModal);
+    document.getElementById("payDueSave").addEventListener("click", function(){
+      setSaleDueDate(sale.id, document.getElementById("payDueDate").value).then(function(){ toast("Fecha actualizada."); closeModal(); }).catch(function(){});
+    });
+    document.getElementById("paySave").addEventListener("click", function(){
+      var amount = Number(document.getElementById("payAmount").value)||0;
+      if (amount<=0){ toast("Ingresá un monto mayor a 0.", true); return; }
+      var note = document.getElementById("payNote").value;
+      var newDue = document.getElementById("payDueDate").value;
+      var proceed = function(){
+        addPayment(sale.id, amount, note).then(function(){ toast("✔ Pago registrado."); closeModal(); }).catch(function(){});
+      };
+      if (newDue !== (sale.paymentDueDate||"")) setSaleDueDate(sale.id, newDue).then(proceed); else proceed();
+    });
+  }
+
+  /* ============ CUENTAS POR COBRAR VIEW ============ */
+  function computeCuentas(){
+    return salesList.filter(function(s){ return s.balance>0.009; })
+      .sort(function(a,b){
+        var da = a.paymentDueDate || "9999-99-99";
+        var db = b.paymentDueDate || "9999-99-99";
+        if (da!==db) return da<db ? -1 : 1;
+        return new Date(a.date) - new Date(b.date);
+      });
+  }
+  function updateCuentasBadge(){
+    var badge = document.getElementById("navCuentasBadge");
+    if (!badge) return;
+    var count = salesList.filter(function(s){ return s.payStatus==="vencido"; }).length;
+    if (count>0){ badge.hidden=false; badge.textContent = count>99?"99+":String(count); } else { badge.hidden = true; }
+  }
+  function renderCuentas(){
+    var items = computeCuentas();
+    var totalOwed = items.reduce(function(s,x){ return s+x.balance; },0);
+    var overdueCount = items.filter(function(x){ return x.payStatus==="vencido"; }).length;
+    document.getElementById("cuentasStatGrid").innerHTML =
+      '<div class="card stat-tile"><span>Total adeudado</span><strong class="mono">'+fmtUSD.format(totalOwed)+'</strong></div>'+
+      '<div class="card stat-tile"><span>Cuentas vencidas</span><strong class="mono">'+overdueCount+'</strong></div>'+
+      '<div class="card stat-tile"><span>Cuentas pendientes</span><strong class="mono">'+items.length+'</strong></div>';
+    var el = document.getElementById("cuentasList");
+    if (!items.length){ el.innerHTML = '<div class="empty-note">No hay saldos pendientes — está todo cobrado.</div>'; return; }
+    el.innerHTML = items.map(function(s){
+      return '<div class="card sale-card" data-id="'+esc(s.id)+'">'+
+        '<div class="sale-head"><div class="sale-head-left"><strong>'+esc(s.clientName)+'</strong><span>'+fmtDate(s.date)+' · '+(s.items?s.items.length:0)+' unidad(es)</span></div>'+
+        '<div class="sale-head-right"><strong class="mono">'+fmtUSD.format(s.balance)+'</strong>'+paymentPillHtml_(s)+'</div></div>'+
+        '<div class="sale-items">'+paymentSummaryHtml_(s)+'</div>'+
+      '</div>';
+    }).join("");
+    el.querySelectorAll(".sale-card").forEach(function(card){
+      card.querySelector(".sale-head").addEventListener("click", function(){ card.classList.toggle("open"); });
+    });
+    bindPaymentButtons_(el);
+  }
 
   /* ============ SEGUIMIENTOS VIEW ============ */
   function computeFollowups(thresholdDays){
