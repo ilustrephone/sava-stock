@@ -881,8 +881,10 @@
 
   function renderQuickAdd(){
     var slot = document.getElementById("quickAddSlot");
-    if (!pendingImei){ slot.innerHTML = ""; return; }
+    if (!pendingImei){ slot.innerHTML = ""; slot.removeAttribute("data-imei"); return; }
+    if (slot.dataset.imei === pendingImei) return;
     var d = lastDefaults;
+    slot.dataset.imei = pendingImei;
     slot.innerHTML =
       '<div class="card quickadd">'+
         '<div class="imei-echo mono">'+esc(pendingImei)+'</div>'+
