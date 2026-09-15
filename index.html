@@ -361,6 +361,11 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
         <span>Stock</span>
       </button>
+      <button class="nav-item" data-view="servicio" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span>Servicio técnico</span>
+        <span class="nav-badge" id="navServicioBadge" hidden>0</span>
+      </button>
       <button class="nav-item" data-view="clients" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 5 18.5V20"/><circle cx="9.5" cy="8" r="3.25"/><path d="M15.5 5.5a3 3 0 0 1 0 6M20 20v-1.3a3 3 0 0 0-2.1-2.86"/></svg>
         <span>Clientes</span>
@@ -435,6 +440,7 @@
           <option value="sold">Vendido</option>
         </select>
         <select id="stockFilterModel"><option value="">Todos los modelos</option></select>
+        <button class="btn btn-ghost" id="stockWaListBtn" type="button">Enviar lista por WhatsApp</button>
         <button class="btn btn-primary" id="stockAddBtn" type="button">+ Agregar manual</button>
       </div>
       <div class="card table-wrap">
@@ -446,6 +452,20 @@
           <tbody id="stockTableBody"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- SERVICIO TECNICO VIEW -->
+    <section class="view" id="view-servicio" hidden>
+      <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+        <div class="section-title">Cargar equipo en servicio técnico</div>
+        <div class="field-row3">
+          <div class="field"><label>IMEI</label><input id="stImei" class="mono" type="text" placeholder="Opcional" /></div>
+          <div class="field"><label>Modelo</label><input id="stModelo" type="text" placeholder="Ej. iPhone 13 128 GB" /></div>
+          <div class="field"><label>Motivo / falla</label><input id="stMotivo" type="text" placeholder="Ej. Cambio de batería" /></div>
+        </div>
+        <button class="btn btn-primary" id="stAddBtn" type="button">+ Agregar a servicio técnico</button>
+      </div>
+      <div id="servicioList"></div>
     </section>
 
     <!-- CLIENTS VIEW -->
@@ -598,7 +618,7 @@
   /* ============ state ============ */
   var apiReady = false;
   var pollTimer = null;
-  var stockList = [], clientsList = [], salesList = [];
+  var stockList = [], clientsList = [], salesList = [], serviceTickets = [];
   var currentView = "scan";
   var scanMode = "alta"; // alta | venta
   var pendingImei = null; // imei awaiting quick-add form
@@ -654,6 +674,9 @@
     ];
     salesList = [
       {id:"s1",clientId:"c1",clientName:"Martín Reventas SRL",date:new Date(now-1000*60*60*20).toISOString(),items:[{imei:"350123453333330",modelo:"iPhone 15",almacenamiento:"128 GB",precio:735}],total:735,notes:""}
+    ];
+    serviceTickets = [
+      {id:"st1",imei:"350123459999990",modelo:"iPhone 13",motivo:"Cambio de batería",status:"pendiente",createdAt:new Date(now-1000*60*60*24*2).toISOString(),resolvedAt:""}
     ];
   }
 
@@ -717,10 +740,11 @@
   }
 
   function refreshAll(){
-    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales")]).then(function(results){
+    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets")]).then(function(results){
       stockList = results[0].map(normalizeStockRow_).sort(function(a,b){ return (b.addedAt||"").localeCompare(a.addedAt||""); });
       clientsList = results[1].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       salesList = results[2].map(normalizeSaleRow_).sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
+      serviceTickets = results[3].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       apiReady = true;
       document.getElementById("previewBanner").hidden = true;
       renderCurrentView(); renderSidebarCount();
@@ -832,6 +856,7 @@
   var VIEW_META = {
     scan:{title:"Escanear", sub:"Apuntá el lector al código de barras del IMEI."},
     stock:{title:"Stock", sub:"Inventario completo de unidades, en stock y vendidas."},
+    servicio:{title:"Servicio técnico", sub:"Equipos que llegaron y están pendientes de reparación."},
     clients:{title:"Clientes", sub:"Revendedores y su historial de compras."},
     sales:{title:"Ventas", sub:"Historial de pedidos confirmados."},
     cuentas:{title:"Cuentas por cobrar", sub:"Saldos pendientes y fechas límite de pago."},
@@ -855,6 +880,7 @@
   function renderCurrentView(){
     if (currentView==="scan") renderScan();
     else if (currentView==="stock") renderStock();
+    else if (currentView==="servicio") renderServicio();
     else if (currentView==="clients") renderClients();
     else if (currentView==="sales") renderSales();
     else if (currentView==="cuentas") renderCuentas();
@@ -866,6 +892,7 @@
     document.getElementById("sidebarStockCount").textContent = n;
     updateFollowupBadge();
     updateCuentasBadge();
+    updateServicioBadge();
   }
 
   /* ============ SCAN VIEW ============ */
@@ -1169,6 +1196,50 @@
   });
   document.getElementById("stockAddBtn").addEventListener("click", function(){ openEditStock(null); });
 
+  /* ---- lista de stock disponible para WhatsApp ---- */
+  function buildStockListText(){
+    var items = stockList.filter(function(u){ return u.status==="in_stock"; })
+      .slice()
+      .sort(function(a,b){ return (a.modelo||"").localeCompare(b.modelo||"") || (a.almacenamiento||"").localeCompare(b.almacenamiento||""); });
+    var lines = [];
+    lines.push("*Sava Mayorista* — Stock disponible");
+    lines.push("Fecha: "+fmtDate(new Date().toISOString()));
+    lines.push("");
+    if (!items.length){ lines.push("Sin equipos disponibles por el momento."); return lines.join("\n"); }
+    items.forEach(function(u, i){
+      var label = [u.modelo, u.almacenamiento].filter(Boolean).join(" ");
+      if (u.color) label += " — "+u.color;
+      var extra = [];
+      if (u.precio!=null) extra.push(fmtUSD.format(u.precio));
+      if (u.bateria!=null && u.bateria!=="") extra.push("Batería "+u.bateria+"%");
+      lines.push((i+1)+") "+label+(extra.length ? " — "+extra.join(" · ") : ""));
+    });
+    lines.push("");
+    lines.push("Total: "+items.length+" equipo(s) disponible(s).");
+    return lines.join("\n");
+  }
+  function openStockListModal(){
+    var text = buildStockListText();
+    var body =
+      '<div class="field"><label>Mensaje (lo podés editar antes de enviar)</label><textarea id="stockListText" class="mono">'+esc(text)+'</textarea></div>'+
+      '<div class="scan-hint" style="margin-bottom:10px;">Sin destinatario fijo — al tocar Enviar, WhatsApp te deja elegir el contacto o grupo.</div>'+
+      '<div class="modal-actions">'+
+        '<button class="btn btn-ghost" id="stockListCopy" type="button">Copiar texto</button>'+
+        '<a class="btn btn-scan" id="stockListSend" href="'+esc(waLink("", text))+'" target="_blank" rel="noopener">Enviar por WhatsApp</a>'+
+      '</div>';
+    openModal("Stock disponible", body);
+    document.getElementById("stockListCopy").addEventListener("click", function(){
+      var ta = document.getElementById("stockListText");
+      ta.select();
+      try{ navigator.clipboard.writeText(ta.value); }catch(e){ try{ document.execCommand("copy"); }catch(e2){} }
+      toast("Texto copiado.");
+    });
+    document.getElementById("stockListText").addEventListener("input", function(e){
+      document.getElementById("stockListSend").setAttribute("href", waLink("", e.target.value));
+    });
+  }
+  document.getElementById("stockWaListBtn").addEventListener("click", openStockListModal);
+
   function openEditStock(imei){
     var u = imei ? findStock(imei) : null;
     var d = u || {modelo:lastDefaults.modelo, almacenamiento:lastDefaults.almacenamiento, condicion:lastDefaults.condicion, procedencia:lastDefaults.procedencia};
@@ -1423,6 +1494,91 @@
       card.querySelector(".sale-head").addEventListener("click", function(){ card.classList.toggle("open"); });
     });
     bindPaymentButtons_(el);
+  }
+
+  /* ============ SERVICIO TECNICO VIEW ============ */
+  document.getElementById("stAddBtn").addEventListener("click", function(){
+    if (previewGuard()) return;
+    var imei = sanitizeImei(document.getElementById("stImei").value);
+    var modelo = document.getElementById("stModelo").value.trim();
+    var motivo = document.getElementById("stMotivo").value.trim();
+    if (!imei && !modelo){ toast("Cargá al menos el IMEI o el modelo.", true); return; }
+    if (!motivo){ toast("Contá el motivo o la falla.", true); return; }
+    apiCreate("service_tickets", {imei:imei||"", modelo:modelo||"", motivo:motivo, status:"pendiente", createdAt:new Date().toISOString(), resolvedAt:""})
+      .then(function(){
+        document.getElementById("stImei").value = "";
+        document.getElementById("stModelo").value = "";
+        document.getElementById("stMotivo").value = "";
+        toast("✔ Cargado en servicio técnico.");
+        refreshAll();
+      }).catch(function(err){ toast("No se pudo cargar: "+err.message, true); });
+  });
+  function updateServicioBadge(){
+    var badge = document.getElementById("navServicioBadge");
+    if (!badge) return;
+    var count = serviceTickets.filter(function(t){ return t.status==="pendiente"; }).length;
+    if (count>0){ badge.hidden=false; badge.textContent = count>99?"99+":String(count); } else { badge.hidden = true; }
+  }
+  function resolveServiceTicket(id){
+    if (previewGuard()) return Promise.reject();
+    return apiUpdate("service_tickets", id, {status:"resuelto", resolvedAt:new Date().toISOString()}).then(function(r){ refreshAll(); return r; });
+  }
+  function deleteServiceTicket(id){
+    if (previewGuard()) return Promise.reject();
+    return apiDelete("service_tickets", id).then(function(r){ refreshAll(); return r; });
+  }
+  function renderServicio(){
+    updateServicioBadge();
+    var pending = serviceTickets.filter(function(t){ return t.status==="pendiente"; })
+      .sort(function(a,b){ return (a.createdAt||"").localeCompare(b.createdAt||""); });
+    var resolved = serviceTickets.filter(function(t){ return t.status==="resuelto"; })
+      .sort(function(a,b){ return (b.resolvedAt||"").localeCompare(a.resolvedAt||""); }).slice(0,10);
+    var el = document.getElementById("servicioList");
+    var html = "";
+    if (!pending.length){
+      html += '<div class="empty-note">No hay equipos pendientes en servicio técnico.</div>';
+    } else {
+      html += pending.map(function(t){
+        var dias = daysBetween(new Date(t.createdAt), new Date());
+        return '<div class="card" style="padding:14px 16px;margin-bottom:10px;" data-id="'+esc(t.id)+'">'+
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'+
+            '<div><strong>'+esc(t.modelo||"Sin modelo")+'</strong>'+
+            (t.imei ? '<div class="mono" style="font-size:12px;color:var(--ink-muted);">'+esc(t.imei)+'</div>' : '')+
+            '<div style="font-size:12.5px;color:var(--ink-muted);margin-top:4px;">'+esc(t.motivo)+'</div></div>'+
+            '<span class="pill pill-days">'+dias+' día(s)</span>'+
+          '</div>'+
+          '<div class="modal-actions" style="justify-content:flex-end;margin-top:10px;">'+
+            '<button class="btn btn-ghost btn-sm" data-st-del="'+esc(t.id)+'" type="button">Eliminar</button>'+
+            '<button class="btn btn-primary btn-sm" data-st-resolve="'+esc(t.id)+'" type="button">Marcar resuelto</button>'+
+          '</div>'+
+        '</div>';
+      }).join("");
+    }
+    if (resolved.length){
+      html += '<div class="section-title" style="margin-top:18px;">Resueltos recientes</div>' +
+        resolved.map(function(t){
+          return '<div class="card" style="padding:12px 16px;margin-bottom:8px;opacity:0.7;" data-id="'+esc(t.id)+'">'+
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'+
+              '<div><strong>'+esc(t.modelo||"Sin modelo")+'</strong>'+
+              (t.imei ? ' <span class="mono" style="font-size:12px;color:var(--ink-muted);">'+esc(t.imei)+'</span>' : '')+
+              '<div style="font-size:12.5px;color:var(--ink-muted);">'+esc(t.motivo)+'</div></div>'+
+              '<button class="btn btn-ghost btn-sm" data-st-del="'+esc(t.id)+'" type="button">Eliminar</button>'+
+            '</div>'+
+          '</div>';
+        }).join("");
+    }
+    el.innerHTML = html;
+    el.querySelectorAll("[data-st-resolve]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        resolveServiceTicket(btn.dataset.stResolve).then(function(){ toast("✔ Marcado como resuelto."); }).catch(function(){});
+      });
+    });
+    el.querySelectorAll("[data-st-del]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        if (!confirm("¿Eliminar este registro de servicio técnico?")) return;
+        deleteServiceTicket(btn.dataset.stDel).then(function(){ toast("Eliminado."); }).catch(function(){});
+      });
+    });
   }
 
   /* ============ SEGUIMIENTOS VIEW ============ */
