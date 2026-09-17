@@ -472,6 +472,7 @@
     <section class="view" id="view-clients" hidden>
       <div class="toolbar">
         <input type="search" id="clientSearch" placeholder="Buscar cliente…" class="grow" />
+        <button class="btn btn-ghost" id="clientBulkSendBtn" type="button" hidden>Enviar a seleccionados</button>
         <button class="btn btn-primary" id="clientAddBtn" type="button">+ Nuevo cliente</button>
       </div>
       <div class="client-grid" id="clientGrid"></div>
@@ -1293,6 +1294,13 @@
   }
 
   /* ============ CLIENTS VIEW ============ */
+  var selectedClientIds = new Set();
+  function updateClientBulkBar(){
+    var btn = document.getElementById("clientBulkSendBtn");
+    var n = selectedClientIds.size;
+    if (n>0){ btn.hidden = false; btn.textContent = "Enviar a seleccionados ("+n+")"; }
+    else { btn.hidden = true; }
+  }
   function clientStats(id){
     var sales = salesList.filter(function(s){ return s.clientId===id; });
     var units = sales.reduce(function(s,x){ return s + (x.items?x.items.length:0); },0);
@@ -1309,18 +1317,57 @@
     grid.innerHTML = rows.map(function(c){
       var st = clientStats(c.id);
       return '<div class="card client-card" data-id="'+esc(c.id)+'">'+
-        '<h3>'+esc(c.name)+'</h3>'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'+
+          '<h3 style="margin-bottom:2px;">'+esc(c.name)+'</h3>'+
+          '<input type="checkbox" class="client-select-cb" data-id="'+esc(c.id)+'"'+(selectedClientIds.has(c.id)?' checked':'')+' />'+
+        '</div>'+
         '<div class="muted">'+esc(c.city||"—")+(c.phone?(' · '+esc(c.phone)):'')+'</div>'+
         '<div class="stats"><div><strong class="mono">'+st.units+'</strong><span>Unidades</span></div><div><strong class="mono">'+fmtUSD.format(st.total)+'</strong><span>Total</span></div><div><strong class="mono">'+st.orders+'</strong><span>Pedidos</span></div></div>'+
         (st.balance>0.009 ? '<div class="client-balance'+(st.overdue?' overdue':'')+'">Debe '+fmtUSD.format(st.balance)+(st.overdue?' · vencido':'')+'</div>' : '')+
       '</div>';
     }).join("");
     grid.querySelectorAll(".client-card").forEach(function(card){
-      card.addEventListener("click", function(){ openClientDetail(card.dataset.id); });
+      card.addEventListener("click", function(e){
+        if (e.target.classList.contains("client-select-cb")) return;
+        openClientDetail(card.dataset.id);
+      });
     });
+    grid.querySelectorAll(".client-select-cb").forEach(function(cb){
+      cb.addEventListener("click", function(e){ e.stopPropagation(); });
+      cb.addEventListener("change", function(){
+        if (cb.checked) selectedClientIds.add(cb.dataset.id); else selectedClientIds.delete(cb.dataset.id);
+        updateClientBulkBar();
+      });
+    });
+    updateClientBulkBar();
   }
   document.getElementById("clientSearch").addEventListener("input", renderClients);
   document.getElementById("clientAddBtn").addEventListener("click", function(){ openEditClient(null); });
+  document.getElementById("clientBulkSendBtn").addEventListener("click", function(){
+    var ids = Array.from(selectedClientIds);
+    var selected = clientsList.filter(function(c){ return ids.indexOf(c.id)>-1; });
+    if (!selected.length) return;
+    var text = buildStockListText();
+    var rows = selected.map(function(c){
+      var hasPhone = !!c.phone;
+      return '<div class="card" style="padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;">'+
+        '<div><strong>'+esc(c.name)+'</strong>'+(hasPhone?'':'<div class="scan-hint" style="margin-top:2px;">Sin teléfono cargado</div>')+'</div>'+
+        (hasPhone ? '<a class="btn btn-scan btn-sm" data-wa="'+esc(c.id)+'" href="'+esc(waLink(c.phone, text))+'" target="_blank" rel="noopener">Enviar por WhatsApp</a>' : '<button class="btn btn-ghost btn-sm" disabled type="button">Sin teléfono</button>')+
+      '</div>';
+    }).join("");
+    var body =
+      '<div class="field"><label>Mensaje (se manda igual a todos — lo podés editar acá)</label><textarea id="bulkSendText" class="mono">'+esc(text)+'</textarea></div>'+
+      '<div class="scan-hint" style="margin-bottom:10px;">Tocá "Enviar por WhatsApp" en cada cliente — se abre su chat ya con el mensaje listo, vos confirmás el envío adentro de WhatsApp.</div>'+
+      '<div id="bulkSendList">'+rows+'</div>';
+    openModal("Enviar stock a "+selected.length+" cliente(s)", body);
+    document.getElementById("bulkSendText").addEventListener("input", function(e){
+      var newText = e.target.value;
+      document.getElementById("bulkSendList").querySelectorAll("[data-wa]").forEach(function(a){
+        var c = selected.find(function(x){ return x.id===a.dataset.wa; });
+        a.setAttribute("href", waLink(c.phone, newText));
+      });
+    });
+  });
 
   function openClientDetail(id){
     var c = clientsList.find(function(x){ return x.id===id; });
