@@ -466,12 +466,18 @@
       <div class="card" style="padding:16px 18px;margin-bottom:16px;">
         <div class="section-title">Anotar pedido de cliente</div>
         <div class="field-row3">
-          <div class="field"><label>Cliente</label><input id="pedClienteInput" type="text" placeholder="Nombre del cliente" /></div>
+          <div class="field"><label>Cliente</label><select id="pedClienteSelect"><option value="">Elegí un cliente…</option><option value="NEW">+ Cliente nuevo</option></select></div>
+          <div class="field" id="pedNewClienteWrap" hidden><label>Nombre (cliente nuevo)</label><input id="pedNewClienteInput" type="text" placeholder="Nombre del cliente" /></div>
           <div class="field"><label>Teléfono</label><input id="pedTelefonoInput" class="mono" type="text" placeholder="Opcional — para avisarle por WhatsApp" /></div>
-          <div class="field"><label>Modelo que pide</label><input id="pedModeloInput" type="text" placeholder="Ej. iPhone 15 Pro Max 256 GB" /></div>
         </div>
-        <div class="field"><label>Notas</label><input id="pedNotasInput" type="text" placeholder="Color, condición, presupuesto, etc. (opcional)" /></div>
-        <button class="btn btn-primary" id="pedAddBtn" type="button">+ Agregar pedido</button>
+        <div class="field-row3">
+          <div class="field"><label>Modelo que pide</label><input id="pedModeloInput" type="text" placeholder="Ej. iPhone 15 Pro Max 256 GB" /></div>
+          <div class="field"><label>Precio (USD)</label><input id="pedPrecioInput" class="mono" type="number" min="0" step="1" placeholder="Opcional" /></div>
+          <div class="field"><label>Notas</label><input id="pedNotasInput" type="text" placeholder="Color, condición, etc. (opcional)" /></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="pedAddLineBtn" type="button">+ Agregar modelo a este pedido</button>
+        <div id="pedLinesList" style="margin-top:6px;"></div>
+        <button class="btn btn-primary" id="pedSaveBtn" type="button" style="margin-top:12px;" disabled>Guardar pedido</button>
       </div>
       <div id="pedidosList"></div>
     </section>
@@ -702,7 +708,9 @@
       {id:"st1",imei:"350123459999990",modelo:"iPhone 13",motivo:"Cambio de batería",status:"pendiente",createdAt:new Date(now-1000*60*60*24*2).toISOString(),resolvedAt:""}
     ];
     ordersList = [
-      {id:"o1",clientName:"Martín Reventas SRL",phone:"261 555-0110",modelo:"iPhone 15 Pro Max 256 GB",notas:"Prefiere color titanio natural",status:"pendiente",createdAt:new Date(now-1000*60*60*24*1).toISOString(),resolvedAt:""}
+      {id:"o1",clientId:"c1",clientName:"Martín Reventas SRL",phone:"261 555-0110",
+        items:[{modelo:"iPhone 15 Pro Max 256 GB",precio:1050,notas:"Prefiere color titanio natural",status:"pendiente",resolvedAt:""}],
+        createdAt:new Date(now-1000*60*60*24*1).toISOString()}
     ];
   }
 
@@ -764,6 +772,18 @@
     return {id:o.id, clientId:o.clientId, clientName:o.clientName, date:o.date, items:items, total:total, notes:o.notes||"",
       paymentDueDate:dueDate, payments:payments, amountPaid:amountPaid, balance:balance, payStatus:payStatus};
   }
+  function normalizeOrderRow_(o){
+    var items = [];
+    if (o.itemsJson){
+      try{ items = JSON.parse(o.itemsJson||"[]"); }catch(e){ items = []; }
+    }
+    if (!items.length && o.modelo){
+      // pedidos guardados con el formato viejo (un solo modelo por pedido)
+      items = [{modelo:o.modelo, precio:toNum_(o.precio), notas:o.notas||"", status:o.status||"pendiente", resolvedAt:o.resolvedAt||""}];
+    }
+    items = items.map(function(it){ return {modelo:it.modelo||"", precio:toNum_(it.precio), notas:it.notas||"", status:it.status||"pendiente", resolvedAt:it.resolvedAt||""}; });
+    return {id:o.id, clientId:o.clientId||"", clientName:o.clientName||"", phone:o.phone||"", items:items, createdAt:o.createdAt||""};
+  }
 
   function refreshAll(){
     return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders")]).then(function(results){
@@ -771,7 +791,7 @@
       clientsList = results[1].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       salesList = results[2].map(normalizeSaleRow_).sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
       serviceTickets = results[3].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
-      ordersList = results[4].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+      ordersList = results[4].map(normalizeOrderRow_).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       apiReady = true;
       document.getElementById("previewBanner").hidden = true;
       renderCurrentView(); renderSidebarCount();
@@ -1641,89 +1661,201 @@
   }
 
   /* ============ PEDIDOS VIEW ============ */
-  document.getElementById("pedAddBtn").addEventListener("click", function(){
-    if (previewGuard()) return;
-    var clientName = document.getElementById("pedClienteInput").value.trim();
-    var phone = document.getElementById("pedTelefonoInput").value.trim();
+  var pedLines = []; // líneas del pedido que se está armando: [{modelo,precio,notas}]
+  document.getElementById("pedClienteSelect").addEventListener("change", function(){
+    var val = this.value;
+    var wrap = document.getElementById("pedNewClienteWrap");
+    if (val === "NEW"){
+      wrap.hidden = false;
+    } else {
+      wrap.hidden = true;
+      var c = clientsList.find(function(x){ return x.id===val; });
+      var phoneInput = document.getElementById("pedTelefonoInput");
+      if (c && !phoneInput.value) phoneInput.value = c.phone||"";
+    }
+  });
+  document.getElementById("pedAddLineBtn").addEventListener("click", function(){
     var modelo = document.getElementById("pedModeloInput").value.trim();
+    var precioRaw = document.getElementById("pedPrecioInput").value;
     var notas = document.getElementById("pedNotasInput").value.trim();
-    if (!clientName){ toast("Contá quién lo pidió.", true); return; }
     if (!modelo){ toast("Contá qué modelo pidió.", true); return; }
-    apiCreate("orders", {clientName:clientName, phone:phone||"", modelo:modelo, notas:notas||"", status:"pendiente", createdAt:new Date().toISOString(), resolvedAt:""})
-      .then(function(){
-        document.getElementById("pedClienteInput").value = "";
+    pedLines.push({modelo:modelo, precio: precioRaw!=="" ? Number(precioRaw) : null, notas: notas||""});
+    document.getElementById("pedModeloInput").value = "";
+    document.getElementById("pedPrecioInput").value = "";
+    document.getElementById("pedNotasInput").value = "";
+    renderPedLinesList();
+    document.getElementById("pedModeloInput").focus();
+  });
+  document.getElementById("pedSaveBtn").addEventListener("click", function(){
+    if (previewGuard()) return;
+    if (!pedLines.length){ toast("Agregá al menos un modelo al pedido.", true); return; }
+    var sel = document.getElementById("pedClienteSelect");
+    var selVal = sel.value;
+    if (!selVal){ toast("Elegí un cliente (o cargá uno nuevo).", true); return; }
+    var phone = document.getElementById("pedTelefonoInput").value.trim();
+    var itemsPayload = pedLines.map(function(l){ return {modelo:l.modelo, precio:l.precio, notas:l.notas, status:"pendiente", resolvedAt:""}; });
+    function saveOrder(clientId, clientName, phoneForOrder){
+      apiCreate("orders", {
+        clientId: clientId||"", clientName: clientName, phone: phoneForOrder||"",
+        itemsJson: JSON.stringify(itemsPayload), status:"pendiente",
+        createdAt: new Date().toISOString(), resolvedAt: ""
+      }).then(function(){
+        pedLines = [];
         document.getElementById("pedTelefonoInput").value = "";
-        document.getElementById("pedModeloInput").value = "";
-        document.getElementById("pedNotasInput").value = "";
-        toast("✔ Pedido anotado.");
+        document.getElementById("pedNewClienteInput").value = "";
+        document.getElementById("pedNewClienteWrap").hidden = true;
+        sel.value = "";
+        renderPedLinesList();
+        toast("✔ Pedido guardado — "+itemsPayload.length+" modelo(s).");
         refreshAll();
       }).catch(function(err){ toast("No se pudo guardar: "+err.message, true); });
+    }
+    if (selVal === "NEW"){
+      var newName = document.getElementById("pedNewClienteInput").value.trim();
+      if (!newName){ toast("Escribí el nombre del cliente nuevo.", true); return; }
+      addClient({name:newName, phone:phone}).then(function(ref){ saveOrder(ref.id, newName, phone); }).catch(function(){});
+    } else {
+      var c = clientsList.find(function(x){ return x.id===selVal; });
+      saveOrder(selVal, c?c.name:"", phone || (c?c.phone:""));
+    }
   });
+  function renderPedClienteSelect(){
+    var sel = document.getElementById("pedClienteSelect");
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">Elegí un cliente…</option>' +
+      clientsList.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+(c.city?' · '+esc(c.city):'')+'</option>'; }).join("") +
+      '<option value="NEW">+ Cliente nuevo</option>';
+    if (cur && Array.from(sel.options).some(function(o){ return o.value===cur; })) sel.value = cur;
+    document.getElementById("pedNewClienteWrap").hidden = (sel.value !== "NEW");
+  }
+  function renderPedLinesList(){
+    var el = document.getElementById("pedLinesList");
+    if (!el) return;
+    el.innerHTML = pedLines.map(function(l,idx){
+      return '<div class="cart-row"><div class="cart-main"><strong>'+esc(l.modelo)+'</strong>'+
+        (l.notas ? '<span>'+esc(l.notas)+'</span>' : '')+'</div>'+
+        '<span class="mono" style="min-width:70px;text-align:right;">'+(l.precio!=null?fmtUSD.format(l.precio):"—")+'</span>'+
+        '<button class="btn btn-ghost btn-sm" data-ped-line-remove="'+idx+'" type="button">Quitar</button></div>';
+    }).join("");
+    el.querySelectorAll("[data-ped-line-remove]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        pedLines.splice(Number(btn.dataset.pedLineRemove),1);
+        renderPedLinesList();
+      });
+    });
+    var saveBtn = document.getElementById("pedSaveBtn");
+    if (saveBtn) saveBtn.disabled = !pedLines.length;
+  }
   function updatePedidosBadge(){
     var badge = document.getElementById("navPedidosBadge");
     if (!badge) return;
-    var count = ordersList.filter(function(o){ return o.status==="pendiente"; }).length;
+    var count = 0;
+    ordersList.forEach(function(o){ (o.items||[]).forEach(function(it){ if (it.status!=="conseguido") count++; }); });
     if (count>0){ badge.hidden=false; badge.textContent = count>99?"99+":String(count); } else { badge.hidden = true; }
   }
-  function resolveOrder(id){
-    if (previewGuard()) return Promise.reject();
-    return apiUpdate("orders", id, {status:"conseguido", resolvedAt:new Date().toISOString()}).then(function(r){ refreshAll(); return r; });
+  function saveOrderItems_(orderId, items){
+    var allDone = items.every(function(it){ return it.status==="conseguido"; });
+    return apiUpdate("orders", orderId, {itemsJson: JSON.stringify(items), status: allDone?"conseguido":"pendiente", resolvedAt: allDone ? new Date().toISOString() : ""});
   }
-  function deleteOrder(id){
+  function resolvePedidoItem(orderId, idx){
     if (previewGuard()) return Promise.reject();
-    return apiDelete("orders", id).then(function(r){ refreshAll(); return r; });
+    var o = ordersList.find(function(x){ return x.id===orderId; });
+    if (!o) return Promise.reject();
+    var items = o.items.slice();
+    items[idx] = Object.assign({}, items[idx], {status:"conseguido", resolvedAt:new Date().toISOString()});
+    return saveOrderItems_(orderId, items).then(function(r){ refreshAll(); return r; });
+  }
+  function deletePedidoItem(orderId, idx){
+    if (previewGuard()) return Promise.reject();
+    var o = ordersList.find(function(x){ return x.id===orderId; });
+    if (!o) return Promise.reject();
+    var items = o.items.slice();
+    items.splice(idx,1);
+    if (!items.length) return apiDelete("orders", orderId).then(function(r){ refreshAll(); return r; });
+    return saveOrderItems_(orderId, items).then(function(r){ refreshAll(); return r; });
+  }
+  function deletePedidoOrder(orderId){
+    if (previewGuard()) return Promise.reject();
+    return apiDelete("orders", orderId).then(function(r){ refreshAll(); return r; });
   }
   function renderPedidos(){
+    renderPedClienteSelect();
     updatePedidosBadge();
-    var pending = ordersList.filter(function(o){ return o.status==="pendiente"; })
+    renderPedLinesList();
+    var pendingOrders = ordersList.filter(function(o){ return (o.items||[]).some(function(it){ return it.status!=="conseguido"; }); })
       .sort(function(a,b){ return (a.createdAt||"").localeCompare(b.createdAt||""); });
-    var resolved = ordersList.filter(function(o){ return o.status==="conseguido"; })
-      .sort(function(a,b){ return (b.resolvedAt||"").localeCompare(a.resolvedAt||""); }).slice(0,10);
+    var recentResolvedItems = [];
+    ordersList.forEach(function(o){
+      (o.items||[]).forEach(function(it,idx){
+        if (it.status==="conseguido"){ recentResolvedItems.push({orderId:o.id, idx:idx, clientName:o.clientName, phone:o.phone, modelo:it.modelo, precio:it.precio, resolvedAt:it.resolvedAt||""}); }
+      });
+    });
+    recentResolvedItems.sort(function(a,b){ return (b.resolvedAt||"").localeCompare(a.resolvedAt||""); });
+    recentResolvedItems = recentResolvedItems.slice(0,10);
     var el = document.getElementById("pedidosList");
     var html = "";
-    if (!pending.length){
+    if (!pendingOrders.length){
       html += '<div class="empty-note">No hay pedidos pendientes.</div>';
     } else {
-      html += pending.map(function(o){
+      html += pendingOrders.map(function(o){
         var dias = daysBetween(new Date(o.createdAt), new Date());
-        var waBtn = o.phone ? '<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="'+esc(waLink(o.phone, "Hola "+String(o.clientName||"").split(" ")[0]+"! Soy Agustín de Sava Mayorista 👋 Te escribo por el "+o.modelo+" que me habías pedido."))+'">Escribir por WhatsApp</a>' : "";
+        var pendingItems = o.items.map(function(it,idx){ return {it:it, idx:idx}; }).filter(function(x){ return x.it.status!=="conseguido"; });
+        var modelosResumen = pendingItems.map(function(x){ return x.it.modelo; }).join(", ");
+        var waText = "Hola "+String(o.clientName||"").split(" ")[0]+"! Soy Agustín de Sava Mayorista 👋 Te escribo por "+(pendingItems.length>1?("los siguientes modelos que me habías pedido: "+modelosResumen):("el "+modelosResumen+" que me habías pedido"))+".";
+        var waBtn = o.phone ? '<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="'+esc(waLink(o.phone, waText))+'">Escribir por WhatsApp</a>' : "";
+        var itemsHtml = pendingItems.map(function(x){
+          var it = x.it, idx = x.idx;
+          return '<div class="cart-row"><div class="cart-main"><strong>'+esc(it.modelo)+'</strong>'+
+            (it.notas ? '<span>'+esc(it.notas)+'</span>' : '')+'</div>'+
+            '<span class="mono" style="min-width:70px;text-align:right;">'+(it.precio!=null?fmtUSD.format(it.precio):"—")+'</span>'+
+            '<button class="btn btn-ghost btn-sm" data-ped-item-del="'+esc(o.id)+':'+idx+'" type="button">Eliminar</button>'+
+            '<button class="btn btn-primary btn-sm" data-ped-item-resolve="'+esc(o.id)+':'+idx+'" type="button">Conseguido</button>'+
+          '</div>';
+        }).join("");
         return '<div class="card" style="padding:14px 16px;margin-bottom:10px;" data-id="'+esc(o.id)+'">'+
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'+
-            '<div><strong>'+esc(o.modelo)+'</strong>'+
-            '<div style="font-size:12.5px;color:var(--ink-muted);margin-top:2px;">'+esc(o.clientName)+(o.phone?' · '+esc(o.phone):'')+'</div>'+
-            (o.notas ? '<div style="font-size:12.5px;color:var(--ink-muted);margin-top:4px;">'+esc(o.notas)+'</div>' : '')+'</div>'+
+            '<div><strong>'+esc(o.clientName)+'</strong>'+(o.phone?'<span style="font-size:12.5px;color:var(--ink-muted);"> · '+esc(o.phone)+'</span>':'')+'</div>'+
             '<span class="pill pill-days">'+dias+' día(s)</span>'+
           '</div>'+
+          '<div style="margin-top:8px;">'+itemsHtml+'</div>'+
           '<div class="modal-actions" style="justify-content:flex-end;margin-top:10px;">'+
-            '<button class="btn btn-ghost btn-sm" data-ped-del="'+esc(o.id)+'" type="button">Eliminar</button>'+
+            '<button class="btn btn-ghost btn-sm" data-ped-order-del="'+esc(o.id)+'" type="button">Eliminar pedido completo</button>'+
             waBtn+
-            '<button class="btn btn-primary btn-sm" data-ped-resolve="'+esc(o.id)+'" type="button">Marcar conseguido</button>'+
           '</div>'+
         '</div>';
       }).join("");
     }
-    if (resolved.length){
+    if (recentResolvedItems.length){
       html += '<div class="section-title" style="margin-top:18px;">Conseguidos recientemente</div>' +
-        resolved.map(function(o){
-          return '<div class="card" style="padding:12px 16px;margin-bottom:8px;opacity:0.7;" data-id="'+esc(o.id)+'">'+
+        recentResolvedItems.map(function(x){
+          return '<div class="card" style="padding:12px 16px;margin-bottom:8px;opacity:0.7;">'+
             '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'+
-              '<div><strong>'+esc(o.modelo)+'</strong>'+
-              '<div style="font-size:12.5px;color:var(--ink-muted);">'+esc(o.clientName)+(o.phone?' · '+esc(o.phone):'')+'</div></div>'+
-              '<button class="btn btn-ghost btn-sm" data-ped-del="'+esc(o.id)+'" type="button">Eliminar</button>'+
+              '<div><strong>'+esc(x.modelo)+'</strong>'+(x.precio!=null?' <span class="mono" style="color:var(--ink-muted);">· '+fmtUSD.format(x.precio)+'</span>':'')+
+              '<div style="font-size:12.5px;color:var(--ink-muted);">'+esc(x.clientName)+(x.phone?' · '+esc(x.phone):'')+'</div></div>'+
+              '<button class="btn btn-ghost btn-sm" data-ped-item-del="'+esc(x.orderId)+':'+x.idx+'" type="button">Eliminar</button>'+
             '</div>'+
           '</div>';
         }).join("");
     }
     el.innerHTML = html;
-    el.querySelectorAll("[data-ped-resolve]").forEach(function(btn){
+    el.querySelectorAll("[data-ped-item-resolve]").forEach(function(btn){
       btn.addEventListener("click", function(){
-        resolveOrder(btn.dataset.pedResolve).then(function(){ toast("✔ Marcado como conseguido."); }).catch(function(){});
+        var parts = btn.dataset.pedItemResolve.split(":");
+        resolvePedidoItem(parts[0], Number(parts[1])).then(function(){ toast("✔ Marcado como conseguido."); }).catch(function(){});
       });
     });
-    el.querySelectorAll("[data-ped-del]").forEach(function(btn){
+    el.querySelectorAll("[data-ped-item-del]").forEach(function(btn){
       btn.addEventListener("click", function(){
-        if (!confirm("¿Eliminar este pedido?")) return;
-        deleteOrder(btn.dataset.pedDel).then(function(){ toast("Eliminado."); }).catch(function(){});
+        if (!confirm("¿Eliminar este modelo del pedido?")) return;
+        var parts = btn.dataset.pedItemDel.split(":");
+        deletePedidoItem(parts[0], Number(parts[1])).then(function(){ toast("Eliminado."); }).catch(function(){});
+      });
+    });
+    el.querySelectorAll("[data-ped-order-del]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        if (!confirm("¿Eliminar todo el pedido de este cliente?")) return;
+        deletePedidoOrder(btn.dataset.pedOrderDel).then(function(){ toast("Eliminado."); }).catch(function(){});
       });
     });
   }
