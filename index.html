@@ -1674,21 +1674,27 @@
       if (c && !phoneInput.value) phoneInput.value = c.phone||"";
     }
   });
-  document.getElementById("pedAddLineBtn").addEventListener("click", function(){
+  function addPedLineFromInputs_(silent){
     var modelo = document.getElementById("pedModeloInput").value.trim();
     var precioRaw = document.getElementById("pedPrecioInput").value;
     var notas = document.getElementById("pedNotasInput").value.trim();
-    if (!modelo){ toast("Contá qué modelo pidió.", true); return; }
+    if (!modelo){ if (!silent) toast("Contá qué modelo pidió.", true); return false; }
     pedLines.push({modelo:modelo, precio: precioRaw!=="" ? Number(precioRaw) : null, notas: notas||""});
     document.getElementById("pedModeloInput").value = "";
     document.getElementById("pedPrecioInput").value = "";
     document.getElementById("pedNotasInput").value = "";
+    return true;
+  }
+  document.getElementById("pedAddLineBtn").addEventListener("click", function(){
+    if (!addPedLineFromInputs_(false)) return;
     renderPedLinesList();
     document.getElementById("pedModeloInput").focus();
   });
+  document.getElementById("pedModeloInput").addEventListener("input", function(){ updatePedSaveState_(); });
   document.getElementById("pedSaveBtn").addEventListener("click", function(){
     if (previewGuard()) return;
-    if (!pedLines.length){ toast("Agregá al menos un modelo al pedido.", true); return; }
+    if (addPedLineFromInputs_(true)) renderPedLinesList(); // si quedó un modelo cargado sin tocar "+ Agregar", lo suma solo
+    if (!pedLines.length){ toast("Contá qué modelo pidió.", true); return; }
     var sel = document.getElementById("pedClienteSelect");
     var selVal = sel.value;
     if (!selVal){ toast("Elegí un cliente (o cargá uno nuevo).", true); return; }
@@ -1744,8 +1750,14 @@
         renderPedLinesList();
       });
     });
+    updatePedSaveState_();
+  }
+  function updatePedSaveState_(){
     var saveBtn = document.getElementById("pedSaveBtn");
-    if (saveBtn) saveBtn.disabled = !pedLines.length;
+    if (!saveBtn) return;
+    var modeloInput = document.getElementById("pedModeloInput");
+    var hasTypedModelo = modeloInput && modeloInput.value.trim()!=="";
+    saveBtn.disabled = !(pedLines.length || hasTypedModelo);
   }
   function updatePedidosBadge(){
     var badge = document.getElementById("navPedidosBadge");
