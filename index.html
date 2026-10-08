@@ -1662,6 +1662,7 @@
 
   /* ============ PEDIDOS VIEW ============ */
   var pedLines = []; // líneas del pedido que se está armando: [{modelo,precio,notas}]
+  var resolvingPedKey = null; // "orderId:idx" del ítem que está mostrando el formulario de "Conseguido" (IMEI + venta), o null
   document.getElementById("pedClienteSelect").addEventListener("change", function(){
     var val = this.value;
     var wrap = document.getElementById("pedNewClienteWrap");
@@ -1770,13 +1771,22 @@
     var allDone = items.every(function(it){ return it.status==="conseguido"; });
     return apiUpdate("orders", orderId, {itemsJson: JSON.stringify(items), status: allDone?"conseguido":"pendiente", resolvedAt: allDone ? new Date().toISOString() : ""});
   }
-  function resolvePedidoItem(orderId, idx){
+  function resolvePedidoItemAsSale_(orderId, idx, imei, costo, precio){
     if (previewGuard()) return Promise.reject();
     var o = ordersList.find(function(x){ return x.id===orderId; });
     if (!o) return Promise.reject();
-    var items = o.items.slice();
-    items[idx] = Object.assign({}, items[idx], {status:"conseguido", resolvedAt:new Date().toISOString()});
-    return saveOrderItems_(orderId, items).then(function(r){ refreshAll(); return r; });
+    var it = o.items[idx];
+    if (!it) return Promise.reject();
+    var client = {id:o.clientId||"", name:o.clientName||""};
+    return addStock({imei:imei, modelo:it.modelo, almacenamiento:"", color:"", condicion:"", procedencia:"", bateria:null, costo:costo, precio:precio, notas:it.notas||""})
+      .then(function(){
+        return confirmSale([{imei:imei, modelo:it.modelo, almacenamiento:"", precio:precio}], client, "Pedido conseguido y entregado", "", 0);
+      })
+      .then(function(sale){
+        var items = o.items.slice();
+        items[idx] = Object.assign({}, items[idx], {status:"conseguido", resolvedAt:new Date().toISOString(), imei:imei, saleId:sale.id});
+        return saveOrderItems_(orderId, items);
+      }).then(function(r){ refreshAll(); return r; });
   }
   function deletePedidoItem(orderId, idx){
     if (previewGuard()) return Promise.reject();
@@ -1818,11 +1828,27 @@
         var waBtn = o.phone ? '<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="'+esc(waLink(o.phone, waText))+'">Escribir por WhatsApp</a>' : "";
         var itemsHtml = pendingItems.map(function(x){
           var it = x.it, idx = x.idx;
+          var key = o.id+":"+idx;
+          if (resolvingPedKey === key){
+            return '<div class="cart-row" style="flex-wrap:wrap;align-items:flex-start;">'+
+              '<div class="cart-main" style="flex:1 1 100%;"><strong>'+esc(it.modelo)+'</strong>'+
+              (it.notas ? '<span>'+esc(it.notas)+'</span>' : '')+'</div>'+
+              '<div class="field-row3" style="flex:1 1 100%;margin-top:6px;">'+
+                '<div class="field"><label>IMEI</label><input id="pedResolveImei" class="mono" type="text" placeholder="IMEI del equipo" /></div>'+
+                '<div class="field"><label>Costo (USD)</label><input id="pedResolveCosto" class="mono" type="number" min="0" step="1" placeholder="Opcional" /></div>'+
+                '<div class="field"><label>Precio de venta (USD)</label><input id="pedResolvePrecio" class="mono" type="number" min="0" step="1" value="'+(it.precio!=null?it.precio:"")+'" /></div>'+
+              '</div>'+
+              '<div class="modal-actions" style="flex:1 1 100%;justify-content:flex-end;margin-top:8px;">'+
+                '<button class="btn btn-ghost btn-sm" data-ped-item-cancel-resolve="1" type="button">Cancelar</button>'+
+                '<button class="btn btn-primary btn-sm" data-ped-item-confirm-venta="'+esc(o.id)+':'+idx+'" type="button">Confirmar y cargar venta</button>'+
+              '</div>'+
+            '</div>';
+          }
           return '<div class="cart-row"><div class="cart-main"><strong>'+esc(it.modelo)+'</strong>'+
             (it.notas ? '<span>'+esc(it.notas)+'</span>' : '')+'</div>'+
             '<span class="mono" style="min-width:70px;text-align:right;">'+(it.precio!=null?fmtUSD.format(it.precio):"—")+'</span>'+
             '<button class="btn btn-ghost btn-sm" data-ped-item-del="'+esc(o.id)+':'+idx+'" type="button">Eliminar</button>'+
-            '<button class="btn btn-primary btn-sm" data-ped-item-resolve="'+esc(o.id)+':'+idx+'" type="button">Conseguido</button>'+
+            '<button class="btn btn-primary btn-sm" data-ped-item-start-resolve="'+esc(o.id)+':'+idx+'" type="button">Conseguido</button>'+
           '</div>';
         }).join("");
         return '<div class="card" style="padding:14px 16px;margin-bottom:10px;" data-id="'+esc(o.id)+'">'+
@@ -1851,10 +1877,36 @@
         }).join("");
     }
     el.innerHTML = html;
-    el.querySelectorAll("[data-ped-item-resolve]").forEach(function(btn){
+    el.querySelectorAll("[data-ped-item-start-resolve]").forEach(function(btn){
       btn.addEventListener("click", function(){
-        var parts = btn.dataset.pedItemResolve.split(":");
-        resolvePedidoItem(parts[0], Number(parts[1])).then(function(){ toast("✔ Marcado como conseguido."); }).catch(function(){});
+        resolvingPedKey = btn.dataset.pedItemStartResolve;
+        renderPedidos();
+      });
+    });
+    el.querySelectorAll("[data-ped-item-cancel-resolve]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        resolvingPedKey = null;
+        renderPedidos();
+      });
+    });
+    el.querySelectorAll("[data-ped-item-confirm-venta]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        if (previewGuard()) return;
+        var parts = btn.dataset.pedItemConfirmVenta.split(":");
+        var orderId = parts[0], idx = Number(parts[1]);
+        var imei = sanitizeImei(document.getElementById("pedResolveImei").value);
+        var costoRaw = document.getElementById("pedResolveCosto").value;
+        var precioRaw = document.getElementById("pedResolvePrecio").value;
+        if (!imei){ toast("Cargá el IMEI del equipo.", true); return; }
+        if (precioRaw===""){ toast("Cargá el precio de venta.", true); return; }
+        var costo = costoRaw!=="" ? Number(costoRaw) : null;
+        var precio = Number(precioRaw);
+        resolvePedidoItemAsSale_(orderId, idx, imei, costo, precio).then(function(){
+          resolvingPedKey = null;
+          toast("✔ Conseguido y venta registrada.");
+        }).catch(function(err){
+          if (err && err!=="dup") toast("No se pudo registrar la venta: "+(err.message||err), true);
+        });
       });
     });
     el.querySelectorAll("[data-ped-item-del]").forEach(function(btn){
