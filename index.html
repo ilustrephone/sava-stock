@@ -367,6 +367,10 @@
         <span>Pedidos</span>
         <span class="nav-badge" id="navPedidosBadge" hidden>0</span>
       </button>
+      <button class="nav-item" data-view="sellados" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H5a2 2 0 0 0-2 2v7l10.59 10.59a2 2 0 0 0 2.82 0l6.18-6.18a2 2 0 0 0 0-2.82L12 2Z"/><circle cx="7.5" cy="7.5" r="1.25"/></svg>
+        <span>Sellados</span>
+      </button>
       <button class="nav-item" data-view="servicio" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         <span>Servicio técnico</span>
@@ -482,6 +486,30 @@
       <div id="pedidosList"></div>
     </section>
 
+    <!-- SELLADOS VIEW -->
+    <section class="view" id="view-sellados" hidden>
+      <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+        <div class="section-title">Agregar modelo sellado</div>
+        <div class="field-row3">
+          <div class="field"><label>Modelo</label><select id="selModeloInput"></select></div>
+          <div class="field"><label>Almacenamiento</label><select id="selAlmInput"></select></div>
+          <div class="field"><label>Precio de compra (USD)</label><input id="selCompraInput" class="mono" type="number" min="0" step="1" placeholder="0" /></div>
+        </div>
+        <div class="scan-hint" id="selPrecioPreview">Precio final: —</div>
+        <button class="btn btn-primary" id="selAddBtn" type="button" style="margin-top:10px;">+ Agregar a la lista</button>
+      </div>
+      <div class="toolbar">
+        <span style="font-size:12.5px;color:var(--ink-muted);">Precio final = compra + 1% + US$ 30</span>
+        <button class="btn btn-ghost" id="selWaListBtn" type="button">Enviar lista por WhatsApp</button>
+      </div>
+      <div class="card table-wrap">
+        <table>
+          <thead><tr><th>Modelo</th><th>Alm.</th><th class="num">Precio compra</th><th class="num">Precio final</th><th></th></tr></thead>
+          <tbody id="selladosTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- SERVICIO TECNICO VIEW -->
     <section class="view" id="view-servicio" hidden>
       <div class="card" style="padding:16px 18px;margin-bottom:16px;">
@@ -577,6 +605,12 @@
   var ALMACENAMIENTOS = ["64 GB","128 GB","256 GB","512 GB","1 TB","2 TB"];
   var CONDICIONES = ["Nuevo (sellado)","Usado - Grado A (como nuevo)","Usado - Grado B (buen estado)","Usado - Grado C (con marcas)","Reacondicionado"];
   var PROCEDENCIAS = ["Libre de fábrica","Importado USA (bloqueado)","Importado Europa","Canje / usado nacional"];
+  var SELLADOS_MARKUP_PCT = 0.01;
+  var SELLADOS_MARKUP_FIJO = 30;
+  function calcPrecioFinal(compra){
+    if (compra==null || isNaN(compra)) return null;
+    return Math.round(compra * (1+SELLADOS_MARKUP_PCT) + SELLADOS_MARKUP_FIJO);
+  }
 
   var fmtUSD = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:0});
   var fmtUSD2 = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:2});
@@ -647,7 +681,7 @@
   /* ============ state ============ */
   var apiReady = false;
   var pollTimer = null;
-  var stockList = [], clientsList = [], salesList = [], serviceTickets = [], ordersList = [];
+  var stockList = [], clientsList = [], salesList = [], serviceTickets = [], ordersList = [], sealedList = [];
   var currentView = "scan";
   var scanMode = "alta"; // alta | venta
   var pendingImei = null; // imei awaiting quick-add form
@@ -711,6 +745,10 @@
       {id:"o1",clientId:"c1",clientName:"Martín Reventas SRL",phone:"261 555-0110",
         items:[{modelo:"iPhone 15 Pro Max 256 GB",precio:1050,notas:"Prefiere color titanio natural",status:"pendiente",resolvedAt:""}],
         createdAt:new Date(now-1000*60*60*24*1).toISOString()}
+    ];
+    sealedList = [
+      {id:"sl1",modelo:"iPhone 16 Pro",almacenamiento:"256 GB",precioCompra:950,createdAt:new Date(now-1000*60*60*24*3).toISOString()},
+      {id:"sl2",modelo:"iPhone 17 Pro Max",almacenamiento:"256 GB",precioCompra:1250,createdAt:new Date(now-1000*60*60*24*2).toISOString()}
     ];
   }
 
@@ -785,13 +823,17 @@
     return {id:o.id, clientId:o.clientId||"", clientName:o.clientName||"", phone:o.phone||"", items:items, createdAt:o.createdAt||""};
   }
 
+  function normalizeSealedRow_(o){
+    return {id:o.id, modelo:o.modelo||"", almacenamiento:o.almacenamiento||"", precioCompra:toNum_(o.precioCompra), createdAt:o.createdAt||""};
+  }
   function refreshAll(){
-    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders")]).then(function(results){
+    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders"), apiList("sealed_catalog")]).then(function(results){
       stockList = results[0].map(normalizeStockRow_).sort(function(a,b){ return (b.addedAt||"").localeCompare(a.addedAt||""); });
       clientsList = results[1].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       salesList = results[2].map(normalizeSaleRow_).sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
       serviceTickets = results[3].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       ordersList = results[4].map(normalizeOrderRow_).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+      sealedList = results[5].map(normalizeSealedRow_).sort(function(a,b){ return (a.modelo||"").localeCompare(b.modelo||"") || (a.almacenamiento||"").localeCompare(b.almacenamiento||""); });
       apiReady = true;
       document.getElementById("previewBanner").hidden = true;
       renderCurrentView(); renderSidebarCount();
@@ -909,6 +951,7 @@
     sales:{title:"Ventas", sub:"Historial de pedidos confirmados."},
     cuentas:{title:"Cuentas por cobrar", sub:"Saldos pendientes y fechas límite de pago."},
     seguimientos:{title:"Seguimientos", sub:"Clientes para recontactar por WhatsApp."},
+    sellados:{title:"Sellados", sub:"Modelos nuevos disponibles para encargar, con tu margen aplicado."},
     reports:{title:"Reportes", sub:"Estado del inventario y desempeño de ventas."}
   };
   function setView(view){
@@ -934,6 +977,7 @@
     else if (currentView==="sales") renderSales();
     else if (currentView==="cuentas") renderCuentas();
     else if (currentView==="seguimientos") renderSeguimientos();
+    else if (currentView==="sellados") renderSellados();
     else if (currentView==="reports") renderReports();
   }
   function renderSidebarCount(){
@@ -1923,6 +1967,119 @@
       });
     });
   }
+
+  /* ============ SELLADOS VIEW ============ */
+  (function initSelladosSelects(){
+    var m = document.getElementById("selModeloInput");
+    var a = document.getElementById("selAlmInput");
+    if (m) m.innerHTML = MODELOS.map(function(x){ return '<option>'+esc(x)+'</option>'; }).join("");
+    if (a) a.innerHTML = ALMACENAMIENTOS.map(function(x){ return '<option>'+esc(x)+'</option>'; }).join("");
+  })();
+  function updateSelPrecioPreview_(){
+    var raw = document.getElementById("selCompraInput").value;
+    var compra = raw!=="" ? Number(raw) : null;
+    var final = calcPrecioFinal(compra);
+    document.getElementById("selPrecioPreview").textContent = "Precio final: " + (final!=null ? fmtUSD.format(final) : "—");
+  }
+  document.getElementById("selCompraInput").addEventListener("input", updateSelPrecioPreview_);
+  document.getElementById("selAddBtn").addEventListener("click", function(){
+    if (previewGuard()) return;
+    var modelo = document.getElementById("selModeloInput").value;
+    var alm = document.getElementById("selAlmInput").value;
+    var compraRaw = document.getElementById("selCompraInput").value;
+    if (compraRaw===""){ toast("Cargá el precio de compra.", true); return; }
+    var compra = Number(compraRaw);
+    var existing = sealedList.find(function(s){ return s.modelo===modelo && s.almacenamiento===alm; });
+    var p = existing
+      ? apiUpdate("sealed_catalog", existing.id, {precioCompra:compra})
+      : apiCreate("sealed_catalog", {modelo:modelo, almacenamiento:alm, precioCompra:compra, createdAt:new Date().toISOString()});
+    p.then(function(){
+      document.getElementById("selCompraInput").value = "";
+      updateSelPrecioPreview_();
+      toast(existing ? "✔ Precio actualizado." : "✔ Agregado a la lista.");
+      refreshAll();
+    }).catch(function(err){ toast("No se pudo guardar: "+(err&&err.message||err), true); });
+  });
+  function updateSealedItem(id, patch){
+    if (previewGuard()) return Promise.reject();
+    return apiUpdate("sealed_catalog", id, patch).then(function(r){ refreshAll(); return r; });
+  }
+  function deleteSealedItem(id){
+    if (previewGuard()) return Promise.reject();
+    return apiDelete("sealed_catalog", id).then(function(r){ refreshAll(); return r; });
+  }
+  function renderSellados(){
+    var el = document.getElementById("selladosTableBody");
+    if (!el) return;
+    var items = sealedList.slice().sort(function(a,b){ return (a.modelo||"").localeCompare(b.modelo||"") || (a.almacenamiento||"").localeCompare(b.almacenamiento||""); });
+    if (!items.length){
+      el.innerHTML = '<tr><td colspan="5" class="empty-note">Todavía no cargaste modelos sellados.</td></tr>';
+      return;
+    }
+    el.innerHTML = items.map(function(s){
+      var final = calcPrecioFinal(s.precioCompra);
+      return '<tr data-id="'+esc(s.id)+'">'+
+        '<td>'+esc(s.modelo)+'</td>'+
+        '<td>'+esc(s.almacenamiento)+'</td>'+
+        '<td class="num"><input class="mono" data-sel-compra="'+esc(s.id)+'" type="number" min="0" step="1" value="'+(s.precioCompra!=null?s.precioCompra:"")+'" style="width:90px;text-align:right;" /></td>'+
+        '<td class="num mono">'+(final!=null?fmtUSD.format(final):"—")+'</td>'+
+        '<td><button class="btn btn-ghost btn-sm" data-sel-del="'+esc(s.id)+'" type="button">Eliminar</button></td>'+
+      '</tr>';
+    }).join("");
+    el.querySelectorAll("[data-sel-compra]").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        if (previewGuard()) return;
+        var id = inp.dataset.selCompra;
+        var val = inp.value!=="" ? Number(inp.value) : null;
+        updateSealedItem(id, {precioCompra: val}).then(function(){ toast("✔ Precio actualizado."); }).catch(function(){});
+      });
+    });
+    el.querySelectorAll("[data-sel-del]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        if (!confirm("¿Eliminar este modelo de la lista?")) return;
+        deleteSealedItem(btn.dataset.selDel).then(function(){ toast("Eliminado."); }).catch(function(){});
+      });
+    });
+  }
+  function buildSealedListText(){
+    var items = sealedList.filter(function(s){ return s.precioCompra!=null; })
+      .slice()
+      .sort(function(a,b){ return (a.modelo||"").localeCompare(b.modelo||"") || (a.almacenamiento||"").localeCompare(b.almacenamiento||""); });
+    var lines = [];
+    lines.push("*Sava Mayorista* — Sellados disponibles para encargar");
+    lines.push("Fecha: "+fmtDate(new Date().toISOString()));
+    lines.push("");
+    if (!items.length){ lines.push("Sin modelos cargados por el momento."); return lines.join("\n"); }
+    items.forEach(function(s){
+      var label = [s.modelo, s.almacenamiento].filter(Boolean).join(" ");
+      var final = calcPrecioFinal(s.precioCompra);
+      lines.push("- "+label+(final!=null ? " — "+fmtUSD.format(final) : ""));
+    });
+    lines.push("");
+    lines.push("Precios en USD. Consultanos para encargar.");
+    return lines.join("\n");
+  }
+  function openSealedListModal(){
+    var text = buildSealedListText();
+    var body =
+      '<div class="field"><label>Mensaje (lo podés editar antes de enviar)</label><textarea id="selListText" class="mono">'+esc(text)+'</textarea></div>'+
+      '<div class="scan-hint" style="margin-bottom:10px;">Sin destinatario fijo — al tocar Enviar, WhatsApp te deja elegir el contacto o grupo.</div>'+
+      '<div class="modal-actions">'+
+        '<button class="btn btn-ghost" id="selListCopy" type="button">Copiar texto</button>'+
+        '<a class="btn btn-scan" id="selListSend" href="'+esc(waLink("", text))+'" target="_blank" rel="noopener">Enviar por WhatsApp</a>'+
+      '</div>';
+    openModal("Sellados disponibles", body);
+    document.getElementById("selListCopy").addEventListener("click", function(){
+      var ta = document.getElementById("selListText");
+      ta.select();
+      try{ navigator.clipboard.writeText(ta.value); }catch(e){ try{ document.execCommand("copy"); }catch(e2){} }
+      toast("Texto copiado.");
+    });
+    document.getElementById("selListText").addEventListener("input", function(e){
+      document.getElementById("selListSend").setAttribute("href", waLink("", e.target.value));
+    });
+  }
+  document.getElementById("selWaListBtn").addEventListener("click", openSealedListModal);
 
   /* ============ SERVICIO TECNICO VIEW ============ */
   document.getElementById("stAddBtn").addEventListener("click", function(){
