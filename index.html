@@ -610,6 +610,10 @@
         </div>
       </div>
       <div class="card report-card" style="margin-top:16px;">
+        <div class="section-title">Rentabilidad — equipos y accesorios</div>
+        <div id="rentabilidadGrid"></div>
+      </div>
+      <div class="card report-card" style="margin-top:16px;">
         <div class="section-title">Ventas — últimos 14 días</div>
         <div id="salesChart"></div>
       </div>
@@ -2621,6 +2625,88 @@
   }
   document.getElementById("followupThreshold").addEventListener("change", renderSeguimientos);
 
+  /* ============ RENTABILIDAD (equipos y accesorios, semana/mes) ============ */
+  function startOfWeekMon_(d){
+    var x = new Date(d); x.setHours(0,0,0,0);
+    var day = x.getDay();
+    var diff = (day===0?6:day-1);
+    x.setDate(x.getDate()-diff);
+    return x;
+  }
+  function startOfMonth_(d){
+    var x = new Date(d); x.setHours(0,0,0,0); x.setDate(1);
+    return x;
+  }
+  function addDays_(d,n){ var x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  function addMonths_(d,n){ var x=new Date(d); x.setMonth(x.getMonth()+n); return x; }
+  function rentabilidadEquipos_(start,end){
+    var ingresos=0, costo=0, ingresosConCosto=0;
+    salesList.forEach(function(s){
+      var d = new Date(s.date);
+      if (d<start || d>=end) return;
+      (s.items||[]).forEach(function(it){
+        var precio = Number(it.precio)||0;
+        ingresos += precio;
+        var stockRow = stockList.find(function(x){ return x.imei===it.imei; });
+        var c = stockRow ? stockRow.costo : null;
+        if (c!=null){ costo += c; ingresosConCosto += precio; }
+      });
+    });
+    return {ingresos:ingresos, costo:costo, margen:ingresosConCosto-costo, ingresosConCosto:ingresosConCosto};
+  }
+  function rentabilidadAccesorios_(start,end,currency){
+    var ingresos=0, costo=0, ingresosConCosto=0;
+    remitosList.forEach(function(r){
+      if ((r.currency||"USD")!==currency) return;
+      var d = new Date(r.createdAt);
+      if (d<start || d>=end) return;
+      (r.items||[]).forEach(function(it){
+        var rev = (it.cantidad||0) * (it.precioUnitario!=null?it.precioUnitario:0);
+        ingresos += rev;
+        if (it.costoUnitario!=null){
+          costo += (it.cantidad||0)*it.costoUnitario;
+          ingresosConCosto += rev;
+        }
+      });
+    });
+    return {ingresos:ingresos, costo:costo, margen:ingresosConCosto-costo, ingresosConCosto:ingresosConCosto};
+  }
+  function rentRowHtml_(label, stats, fmt){
+    var val;
+    if (stats.ingresosConCosto>0){
+      var pct = (stats.margen/stats.ingresosConCosto*100);
+      var sign = stats.margen>=0 ? "+" : "";
+      val = "Ingresos "+fmt.format(stats.ingresos)+" · Rentabilidad "+sign+fmt.format(stats.margen)+" ("+pct.toFixed(1)+"%)";
+    } else {
+      val = "Ingresos "+fmt.format(stats.ingresos)+" · Rentabilidad —";
+    }
+    return '<div class="topclients-row"><span>'+label+'</span><span>'+val+'</span></div>';
+  }
+  function rentSectionTitleHtml_(label){
+    return '<div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin:14px 0 4px;">'+label+'</div>';
+  }
+  function renderRentabilidad(){
+    var el = document.getElementById("rentabilidadGrid");
+    if (!el) return;
+    var now = new Date();
+    var weekStart = startOfWeekMon_(now), weekEnd = addDays_(weekStart,7);
+    var monthStart = startOfMonth_(now), monthEnd = addMonths_(monthStart,1);
+    var hasArs = remitosList.some(function(r){ return r.currency==="ARS"; });
+    var html = '';
+    html += '<div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);margin:4px 0 4px;">Equipos (USD)</div>';
+    html += rentRowHtml_("Esta semana", rentabilidadEquipos_(weekStart,weekEnd), fmtUSD2);
+    html += rentRowHtml_("Este mes", rentabilidadEquipos_(monthStart,monthEnd), fmtUSD2);
+    html += rentSectionTitleHtml_("Accesorios (USD)");
+    html += rentRowHtml_("Esta semana", rentabilidadAccesorios_(weekStart,weekEnd,"USD"), fmtUSD2);
+    html += rentRowHtml_("Este mes", rentabilidadAccesorios_(monthStart,monthEnd,"USD"), fmtUSD2);
+    if (hasArs){
+      html += rentSectionTitleHtml_("Accesorios (ARS)");
+      html += rentRowHtml_("Esta semana", rentabilidadAccesorios_(weekStart,weekEnd,"ARS"), fmtARS2);
+      html += rentRowHtml_("Este mes", rentabilidadAccesorios_(monthStart,monthEnd,"ARS"), fmtARS2);
+    }
+    el.innerHTML = html;
+  }
+
   /* ============ REPORTS VIEW ============ */
   function renderReports(){
     var inStock = stockList.filter(function(u){ return u.status==="in_stock"; });
@@ -2679,6 +2765,7 @@
         '<line x1="'+pad+'" y1="'+(h-pad)+'" x2="'+(w-pad)+'" y2="'+(h-pad)+'" stroke="var(--border)" stroke-width="1"></line>'+
         bars + axisLabels +
       '</svg>';
+    renderRentabilidad();
   }
 
   /* ============ boot ============ */
