@@ -552,22 +552,27 @@
     <!-- REMITOS VIEW -->
     <section class="view" id="view-remitos" hidden>
       <div class="card" style="padding:16px 18px;margin-bottom:16px;">
-        <div class="section-title">Nuevo remito</div>
+        <div class="section-title" id="remFormTitle">Nuevo remito</div>
         <div class="field-row3">
           <div class="field"><label>Cliente</label><select id="remClienteSelect"><option value="">Elegí un cliente…</option><option value="NEW">+ Cliente nuevo</option></select></div>
           <div class="field" id="remNewClienteWrap" hidden><label>Nombre (cliente nuevo)</label><input id="remNewClienteInput" type="text" placeholder="Nombre del cliente" /></div>
           <div class="field"><label>Teléfono</label><input id="remTelefonoInput" class="mono" type="text" placeholder="Opcional — para enviar por WhatsApp" /></div>
         </div>
+        <div class="field" style="max-width:220px;"><label>Moneda</label><select id="remCurrencySelect"><option value="USD">USD (dólares)</option><option value="ARS">ARS (pesos)</option></select></div>
         <div class="field-row3">
           <div class="field"><label>Producto / descripción</label><input id="remItemModeloInput" type="text" placeholder="Ej. Funda transparente iPhone 15" /></div>
           <div class="field"><label>Cantidad</label><input id="remItemCantidadInput" class="mono" type="number" min="1" step="1" placeholder="1" /></div>
-          <div class="field"><label>Precio unitario (USD)</label><input id="remItemPrecioInput" class="mono" type="number" min="0" step="0.01" placeholder="0" /></div>
+          <div class="field"><label>Precio de venta unitario</label><input id="remItemPrecioInput" class="mono" type="number" min="0" step="0.01" placeholder="0" /></div>
         </div>
+        <div class="field" style="max-width:260px;"><label>Costo unitario (interno, opcional)</label><input id="remItemCostoInput" class="mono" type="number" min="0" step="0.01" placeholder="0" /></div>
         <button class="btn btn-ghost btn-sm" id="remAddLineBtn" type="button">+ Agregar item al remito</button>
         <div id="remLinesList" style="margin-top:6px;"></div>
         <div class="scan-hint" id="remTotalPreview">Total: —</div>
         <div class="field" style="margin-top:10px;"><label>Notas</label><input id="remNotasInput" type="text" placeholder="Condición de pago, entrega, etc. (opcional)" /></div>
-        <button class="btn btn-primary" id="remSaveBtn" type="button" style="margin-top:12px;" disabled>Guardar remito</button>
+        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="remSaveBtn" type="button" disabled>Guardar remito</button>
+          <button class="btn btn-ghost" id="remCancelEditBtn" type="button" hidden>Cancelar edición</button>
+        </div>
       </div>
       <div id="remitosList"></div>
     </section>
@@ -646,6 +651,8 @@
 
   var fmtUSD = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:0});
   var fmtUSD2 = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:2});
+  var fmtARS2 = new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",maximumFractionDigits:2});
+  function fmtMoney_(amount, currency){ return (currency==="ARS" ? fmtARS2 : fmtUSD2).format(amount); }
   function fmtDate(iso){ try{ return new Date(iso).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}); }catch(e){ return "—"; } }
   function fmtDateTime(iso){ try{ return new Date(iso).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch(e){ return "—"; } }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
@@ -784,8 +791,8 @@
     ];
     remitosList = [
       {id:"r1",numero:1,clientId:"c1",clientName:"Martín Reventas SRL",phone:"261 555-0110",
-        items:[{modelo:"Funda transparente iPhone 15",cantidad:10,precioUnitario:3},{modelo:"Vidrio templado universal",cantidad:20,precioUnitario:1.5}],
-        total:60,notas:"",createdAt:new Date(now-1000*60*60*24*1).toISOString()}
+        items:[{modelo:"Funda transparente iPhone 15",cantidad:10,precioUnitario:3,costoUnitario:1.5},{modelo:"Vidrio templado universal",cantidad:20,precioUnitario:1.5,costoUnitario:0.6}],
+        total:60,notas:"",currency:"USD",createdAt:new Date(now-1000*60*60*24*1).toISOString()}
     ];
   }
 
@@ -866,8 +873,8 @@
   function normalizeRemitoRow_(o){
     var items = [];
     try{ items = JSON.parse(o.itemsJson||"[]"); }catch(e){ items = []; }
-    items = items.map(function(it){ return {modelo:it.modelo||"", cantidad:toNum_(it.cantidad)||0, precioUnitario:toNum_(it.precioUnitario)}; });
-    return {id:o.id, numero:o.numero!=null?Number(o.numero):null, clientId:o.clientId||"", clientName:o.clientName||"", phone:o.phone||"", items:items, total:toNum_(o.total)||0, notas:o.notas||"", createdAt:o.createdAt||""};
+    items = items.map(function(it){ return {modelo:it.modelo||"", cantidad:toNum_(it.cantidad)||0, precioUnitario:toNum_(it.precioUnitario), costoUnitario:toNum_(it.costoUnitario)}; });
+    return {id:o.id, numero:o.numero!=null?Number(o.numero):null, clientId:o.clientId||"", clientName:o.clientName||"", phone:o.phone||"", items:items, total:toNum_(o.total)||0, notas:o.notas||"", currency:o.currency||"USD", createdAt:o.createdAt||""};
   }
   function refreshAll(){
     return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders"), apiList("sealed_catalog"), apiList("remitos")]).then(function(results){
@@ -947,6 +954,10 @@
   function addRemito(data){
     if (previewGuard()) return Promise.reject();
     return apiCreate("remitos", data).then(function(r){ refreshAll(); return r; });
+  }
+  function updateRemito(id, data){
+    if (previewGuard()) return Promise.reject();
+    return apiUpdate("remitos", id, data).then(function(r){ refreshAll(); return r; });
   }
   function deleteRemito(id){
     if (previewGuard()) return Promise.reject();
@@ -2142,7 +2153,8 @@
 
 
   /* ============ REMITOS VIEW ============ */
-  var remLines = []; // líneas del remito que se está armando: [{modelo,cantidad,precioUnitario}]
+  var remLines = []; // líneas del remito que se está armando: [{modelo,cantidad,precioUnitario,costoUnitario}]
+  var remEditingId = null; // id del remito en edición, o null si se está creando uno nuevo
   document.getElementById("remClienteSelect").addEventListener("change", function(){
     var val = this.value;
     var wrap = document.getElementById("remNewClienteWrap");
@@ -2156,16 +2168,19 @@
     }
   });
   function remLineTotal_(l){ return (l.cantidad||0) * (l.precioUnitario!=null ? l.precioUnitario : 0); }
+  function remLineCosto_(l){ return (l.cantidad||0) * (l.costoUnitario!=null ? l.costoUnitario : 0); }
   function addRemLineFromInputs_(silent){
     var modelo = document.getElementById("remItemModeloInput").value.trim();
     var cantidadRaw = document.getElementById("remItemCantidadInput").value;
     var precioRaw = document.getElementById("remItemPrecioInput").value;
+    var costoRaw = document.getElementById("remItemCostoInput").value;
     if (!modelo){ if (!silent) toast("Contá qué producto lleva.", true); return false; }
     var cantidad = cantidadRaw!=="" ? Number(cantidadRaw) : 1;
-    remLines.push({modelo:modelo, cantidad:cantidad, precioUnitario: precioRaw!=="" ? Number(precioRaw) : null});
+    remLines.push({modelo:modelo, cantidad:cantidad, precioUnitario: precioRaw!=="" ? Number(precioRaw) : null, costoUnitario: costoRaw!=="" ? Number(costoRaw) : null});
     document.getElementById("remItemModeloInput").value = "";
     document.getElementById("remItemCantidadInput").value = "";
     document.getElementById("remItemPrecioInput").value = "";
+    document.getElementById("remItemCostoInput").value = "";
     return true;
   }
   document.getElementById("remAddLineBtn").addEventListener("click", function(){
@@ -2174,6 +2189,7 @@
     document.getElementById("remItemModeloInput").focus();
   });
   document.getElementById("remItemModeloInput").addEventListener("input", function(){ updateRemSaveState_(); });
+  document.getElementById("remCurrencySelect").addEventListener("change", function(){ renderRemLinesList(); });
   document.getElementById("remSaveBtn").addEventListener("click", function(){
     if (previewGuard()) return;
     if (addRemLineFromInputs_(true)) renderRemLinesList(); // si quedó un producto cargado sin tocar "+ Agregar", lo suma solo
@@ -2183,23 +2199,30 @@
     if (!selVal){ toast("Elegí un cliente (o cargá uno nuevo).", true); return; }
     var phone = document.getElementById("remTelefonoInput").value.trim();
     var notas = document.getElementById("remNotasInput").value.trim();
-    var itemsPayload = remLines.map(function(l){ return {modelo:l.modelo, cantidad:l.cantidad, precioUnitario:l.precioUnitario}; });
+    var currency = document.getElementById("remCurrencySelect").value || "USD";
+    var itemsPayload = remLines.map(function(l){ return {modelo:l.modelo, cantidad:l.cantidad, precioUnitario:l.precioUnitario, costoUnitario:l.costoUnitario}; });
     var total = remLines.reduce(function(s,l){ return s + remLineTotal_(l); }, 0);
-    var nextNumero = remitosList.reduce(function(m,r){ return Math.max(m, r.numero||0); }, 0) + 1;
+    var editingId = remEditingId;
+    var numeroForSave = editingId ? (remitosList.find(function(x){ return x.id===editingId; })||{}).numero : (remitosList.reduce(function(m,r){ return Math.max(m, r.numero||0); }, 0) + 1);
     function saveRemito(clientId, clientName, phoneForRemito){
-      addRemito({
-        numero: nextNumero, clientId: clientId||"", clientName: clientName, phone: phoneForRemito||"",
-        itemsJson: JSON.stringify(itemsPayload), total: total, notas: notas,
-        createdAt: new Date().toISOString()
-      }).then(function(){
+      var payload = {
+        numero: numeroForSave, clientId: clientId||"", clientName: clientName, phone: phoneForRemito||"",
+        itemsJson: JSON.stringify(itemsPayload), total: total, notas: notas, currency: currency
+      };
+      var op = editingId ? updateRemito(editingId, payload) : addRemito(Object.assign({createdAt: new Date().toISOString()}, payload));
+      op.then(function(){
+        var wasEditing = !!editingId;
         remLines = [];
+        remEditingId = null;
         document.getElementById("remTelefonoInput").value = "";
         document.getElementById("remNewClienteInput").value = "";
         document.getElementById("remNewClienteWrap").hidden = true;
         document.getElementById("remNotasInput").value = "";
+        document.getElementById("remCurrencySelect").value = "USD";
         sel.value = "";
+        resetRemFormUi_();
         renderRemLinesList();
-        toast("✔ Remito N° "+nextNumero+" guardado.");
+        toast(wasEditing ? "✔ Remito N° "+String(numeroForSave||"").padStart(4,"0")+" actualizado." : "✔ Remito N° "+numeroForSave+" guardado.");
       }).catch(function(err){ toast("No se pudo guardar: "+(err&&err.message||err), true); });
     }
     if (selVal === "NEW"){
@@ -2211,6 +2234,48 @@
       saveRemito(selVal, c?c.name:"", phone || (c?c.phone:""));
     }
   });
+  document.getElementById("remCancelEditBtn").addEventListener("click", function(){
+    remEditingId = null;
+    remLines = [];
+    document.getElementById("remClienteSelect").value = "";
+    document.getElementById("remNewClienteInput").value = "";
+    document.getElementById("remNewClienteWrap").hidden = true;
+    document.getElementById("remTelefonoInput").value = "";
+    document.getElementById("remNotasInput").value = "";
+    document.getElementById("remCurrencySelect").value = "USD";
+    resetRemFormUi_();
+    renderRemLinesList();
+    toast("Edición cancelada.");
+  });
+  function resetRemFormUi_(){
+    var title = document.getElementById("remFormTitle");
+    var saveBtn = document.getElementById("remSaveBtn");
+    var cancelBtn = document.getElementById("remCancelEditBtn");
+    if (title) title.textContent = remEditingId ? ("Editar remito N° "+String((remitosList.find(function(x){ return x.id===remEditingId; })||{}).numero||"").padStart(4,"0")) : "Nuevo remito";
+    if (saveBtn) saveBtn.textContent = remEditingId ? "Guardar cambios" : "Guardar remito";
+    if (cancelBtn) cancelBtn.hidden = !remEditingId;
+  }
+  function startEditRemito_(r){
+    remEditingId = r.id;
+    remLines = (r.items||[]).map(function(it){ return {modelo:it.modelo, cantidad:it.cantidad, precioUnitario:it.precioUnitario, costoUnitario:it.costoUnitario}; });
+    var sel = document.getElementById("remClienteSelect");
+    renderRemClienteSelect();
+    var matchClient = clientsList.find(function(c){ return c.id===r.clientId; });
+    if (matchClient){
+      sel.value = matchClient.id;
+      document.getElementById("remNewClienteWrap").hidden = true;
+    } else {
+      sel.value = "NEW";
+      document.getElementById("remNewClienteWrap").hidden = false;
+      document.getElementById("remNewClienteInput").value = r.clientName||"";
+    }
+    document.getElementById("remTelefonoInput").value = r.phone||"";
+    document.getElementById("remNotasInput").value = r.notas||"";
+    document.getElementById("remCurrencySelect").value = r.currency||"USD";
+    resetRemFormUi_();
+    renderRemLinesList();
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
   function renderRemClienteSelect(){
     var sel = document.getElementById("remClienteSelect");
     if (!sel) return;
@@ -2224,10 +2289,11 @@
   function renderRemLinesList(){
     var el = document.getElementById("remLinesList");
     if (!el) return;
+    var currency = (document.getElementById("remCurrencySelect")||{}).value || "USD";
     el.innerHTML = remLines.map(function(l,idx){
       return '<div class="cart-row"><div class="cart-main"><strong>'+esc(l.modelo)+'</strong>'+
-        '<span>Cantidad: '+esc(l.cantidad)+'</span></div>'+
-        '<span class="mono" style="min-width:70px;text-align:right;">'+(l.precioUnitario!=null?fmtUSD2.format(remLineTotal_(l)):"—")+'</span>'+
+        '<span>Cantidad: '+esc(l.cantidad)+(l.costoUnitario!=null?' · Costo unit.: '+fmtMoney_(l.costoUnitario, currency):'')+'</span></div>'+
+        '<span class="mono" style="min-width:70px;text-align:right;">'+(l.precioUnitario!=null?fmtMoney_(remLineTotal_(l), currency):"—")+'</span>'+
         '<button class="btn btn-ghost btn-sm" data-rem-line-remove="'+idx+'" type="button">Quitar</button></div>';
     }).join("");
     el.querySelectorAll("[data-rem-line-remove]").forEach(function(btn){
@@ -2237,7 +2303,7 @@
       });
     });
     var total = remLines.reduce(function(s,l){ return s + remLineTotal_(l); }, 0);
-    document.getElementById("remTotalPreview").textContent = "Total: " + (remLines.length ? fmtUSD2.format(total) : "—");
+    document.getElementById("remTotalPreview").textContent = "Total: " + (remLines.length ? fmtMoney_(total, currency) : "—");
     updateRemSaveState_();
   }
   function updateRemSaveState_(){
@@ -2257,10 +2323,10 @@
     lines.push("Mercadería entregada:");
     (remito.items||[]).forEach(function(it, i){
       var sub = remLineTotal_(it);
-      lines.push((i+1)+") "+it.modelo+" — x"+it.cantidad+(it.precioUnitario!=null ? " — "+fmtUSD2.format(sub) : ""));
+      lines.push((i+1)+") "+it.modelo+" — x"+it.cantidad+(it.precioUnitario!=null ? " — "+fmtMoney_(sub, remito.currency) : ""));
     });
     lines.push("");
-    lines.push("Total: "+fmtUSD2.format(remito.total));
+    lines.push("Total: "+fmtMoney_(remito.total, remito.currency));
     if (remito.notas){ lines.push(""); lines.push("Notas: "+remito.notas); }
     lines.push("");
     lines.push("_Comprobante interno de entrega — no reemplaza factura._");
@@ -2291,8 +2357,8 @@
   function buildRemitoPrintHtml(remito){
     var filas = (remito.items||[]).map(function(it){
       return '<tr><td>'+esc(it.modelo)+'</td><td style="text-align:center;">'+esc(it.cantidad)+'</td>'+
-        '<td style="text-align:right;">'+(it.precioUnitario!=null?fmtUSD2.format(it.precioUnitario):"—")+'</td>'+
-        '<td style="text-align:right;">'+(it.precioUnitario!=null?fmtUSD2.format(remLineTotal_(it)):"—")+'</td></tr>';
+        '<td style="text-align:right;">'+(it.precioUnitario!=null?fmtMoney_(it.precioUnitario, remito.currency):"—")+'</td>'+
+        '<td style="text-align:right;">'+(it.precioUnitario!=null?fmtMoney_(remLineTotal_(it), remito.currency):"—")+'</td></tr>';
     }).join("");
     return '<!doctype html><html><head><meta charset="utf-8"><title>Remito N° '+String(remito.numero||"").padStart(4,"0")+'</title>'+
       '<style>'+
@@ -2313,7 +2379,7 @@
       '<div class="meta"><span><strong>Cliente:</strong> '+esc(remito.clientName)+'</span><span>'+(remito.phone?esc(remito.phone):'')+'</span></div>'+
       '<table><thead><tr><th>Producto</th><th style="text-align:center;">Cant.</th><th style="text-align:right;">Precio unit.</th><th style="text-align:right;">Subtotal</th></tr></thead>'+
       '<tbody>'+filas+
-      '<tr class="total-row"><td colspan="3">Total</td><td style="text-align:right;">'+fmtUSD2.format(remito.total)+'</td></tr>'+
+      '<tr class="total-row"><td colspan="3">Total</td><td style="text-align:right;">'+fmtMoney_(remito.total, remito.currency)+'</td></tr>'+
       '</tbody></table>'+
       (remito.notas ? '<div class="foot"><strong>Notas:</strong> '+esc(remito.notas)+'</div>' : '')+
       '<div class="foot">Comprobante interno de entrega — no reemplaza factura.</div>'+
@@ -2340,20 +2406,31 @@
     }
     el.innerHTML = remitosList.map(function(r){
       var resumen = (r.items||[]).map(function(it){ return it.modelo+" x"+it.cantidad; }).join(", ");
+      var costoTotal = (r.items||[]).reduce(function(s,it){ return s + remLineCosto_(it); }, 0);
+      var hasCosto = (r.items||[]).some(function(it){ return it.costoUnitario!=null; });
+      var margen = r.total - costoTotal;
       return '<div class="card" style="padding:14px 16px;margin-bottom:10px;" data-id="'+esc(r.id)+'">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'+
           '<div><strong>Remito N° '+String(r.numero||"").padStart(4,"0")+'</strong>'+
           '<div style="font-size:12.5px;color:var(--ink-muted);">'+esc(r.clientName)+(r.phone?' · '+esc(r.phone):'')+'</div></div>'+
-          '<span class="mono" style="font-size:13.5px;">'+fmtUSD2.format(r.total)+'</span>'+
+          '<span class="mono" style="font-size:13.5px;">'+fmtMoney_(r.total, r.currency)+'</span>'+
         '</div>'+
         '<div style="font-size:12.5px;color:var(--ink-muted);margin-top:6px;">'+esc(resumen)+'</div>'+
-        '<div class="modal-actions" style="justify-content:flex-end;margin-top:10px;">'+
+        (hasCosto ? '<div style="font-size:12px;color:var(--ink-muted);margin-top:4px;">Costo: '+fmtMoney_(costoTotal, r.currency)+' · Margen: '+fmtMoney_(margen, r.currency)+'</div>' : '')+
+        '<div class="modal-actions" style="justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">'+
+          '<button class="btn btn-ghost btn-sm" data-rem-edit="'+esc(r.id)+'" type="button">Editar</button>'+
           '<button class="btn btn-ghost btn-sm" data-rem-del="'+esc(r.id)+'" type="button">Eliminar</button>'+
           '<button class="btn btn-ghost btn-sm" data-rem-print="'+esc(r.id)+'" type="button">Imprimir / PDF</button>'+
           '<button class="btn btn-scan btn-sm" data-rem-wa="'+esc(r.id)+'" type="button">Enviar por WhatsApp</button>'+
         '</div>'+
       '</div>';
     }).join("");
+    el.querySelectorAll("[data-rem-edit]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var r = remitosList.find(function(x){ return x.id===btn.dataset.remEdit; });
+        if (r) startEditRemito_(r);
+      });
+    });
     el.querySelectorAll("[data-rem-wa]").forEach(function(btn){
       btn.addEventListener("click", function(){
         var r = remitosList.find(function(x){ return x.id===btn.dataset.remWa; });
