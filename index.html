@@ -495,6 +495,9 @@
           <div class="field"><label>Almacenamiento</label><select id="selAlmInput"></select></div>
           <div class="field"><label>Precio de compra (USD)</label><input id="selCompraInput" class="mono" type="number" min="0" step="1" placeholder="0" /></div>
         </div>
+        <div class="field-row">
+          <div class="field"><label>Color</label><input id="selColorInput" type="text" placeholder="Opcional" /></div>
+        </div>
         <div class="scan-hint" id="selPrecioPreview">Precio final: —</div>
         <button class="btn btn-primary" id="selAddBtn" type="button" style="margin-top:10px;">+ Agregar a la lista</button>
       </div>
@@ -504,7 +507,7 @@
       </div>
       <div class="card table-wrap">
         <table>
-          <thead><tr><th>Modelo</th><th>Alm.</th><th class="num">Precio compra</th><th class="num">Precio final</th><th></th></tr></thead>
+          <thead><tr><th>Modelo</th><th>Alm.</th><th>Color</th><th class="num">Precio compra</th><th class="num">Precio final</th><th></th></tr></thead>
           <tbody id="selladosTableBody"></tbody>
         </table>
       </div>
@@ -600,7 +603,8 @@
     "iPhone 14","iPhone 14 Plus","iPhone 14 Pro","iPhone 14 Pro Max",
     "iPhone 15","iPhone 15 Plus","iPhone 15 Pro","iPhone 15 Pro Max",
     "iPhone 16e","iPhone 16","iPhone 16 Plus","iPhone 16 Pro","iPhone 16 Pro Max",
-    "iPhone 17","iPhone Air","iPhone 17 Pro","iPhone 17 Pro Max","Otro / manual"
+    "iPhone 17","iPhone Air","iPhone 17 Pro","iPhone 17 Pro Max",
+    "iPhone 18 Pro","iPhone 18 Pro Max","Otro / manual"
   ];
   var ALMACENAMIENTOS = ["64 GB","128 GB","256 GB","512 GB","1 TB","2 TB"];
   var CONDICIONES = ["Nuevo (sellado)","Usado - Grado A (como nuevo)","Usado - Grado B (buen estado)","Usado - Grado C (con marcas)","Reacondicionado"];
@@ -609,7 +613,8 @@
   var SELLADOS_MARKUP_FIJO = 30;
   function calcPrecioFinal(compra){
     if (compra==null || isNaN(compra)) return null;
-    return Math.round(compra * (1+SELLADOS_MARKUP_PCT) + SELLADOS_MARKUP_FIJO);
+    var raw = compra * (1+SELLADOS_MARKUP_PCT) + SELLADOS_MARKUP_FIJO;
+    return Math.round(raw/5)*5;
   }
 
   var fmtUSD = new Intl.NumberFormat("es-AR",{style:"currency",currency:"USD",maximumFractionDigits:0});
@@ -747,8 +752,8 @@
         createdAt:new Date(now-1000*60*60*24*1).toISOString()}
     ];
     sealedList = [
-      {id:"sl1",modelo:"iPhone 16 Pro",almacenamiento:"256 GB",precioCompra:950,createdAt:new Date(now-1000*60*60*24*3).toISOString()},
-      {id:"sl2",modelo:"iPhone 17 Pro Max",almacenamiento:"256 GB",precioCompra:1250,createdAt:new Date(now-1000*60*60*24*2).toISOString()}
+      {id:"sl1",modelo:"iPhone 16 Pro",almacenamiento:"256 GB",color:"Titanio natural",precioCompra:950,createdAt:new Date(now-1000*60*60*24*3).toISOString()},
+      {id:"sl2",modelo:"iPhone 17 Pro Max",almacenamiento:"256 GB",color:"Negro espacial",precioCompra:1250,createdAt:new Date(now-1000*60*60*24*2).toISOString()}
     ];
   }
 
@@ -824,7 +829,7 @@
   }
 
   function normalizeSealedRow_(o){
-    return {id:o.id, modelo:o.modelo||"", almacenamiento:o.almacenamiento||"", precioCompra:toNum_(o.precioCompra), createdAt:o.createdAt||""};
+    return {id:o.id, modelo:o.modelo||"", almacenamiento:o.almacenamiento||"", color:o.color||"", precioCompra:toNum_(o.precioCompra), createdAt:o.createdAt||""};
   }
   function refreshAll(){
     return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders"), apiList("sealed_catalog")]).then(function(results){
@@ -1986,15 +1991,17 @@
     if (previewGuard()) return;
     var modelo = document.getElementById("selModeloInput").value;
     var alm = document.getElementById("selAlmInput").value;
+    var color = document.getElementById("selColorInput").value.trim();
     var compraRaw = document.getElementById("selCompraInput").value;
     if (compraRaw===""){ toast("Cargá el precio de compra.", true); return; }
     var compra = Number(compraRaw);
-    var existing = sealedList.find(function(s){ return s.modelo===modelo && s.almacenamiento===alm; });
+    var existing = sealedList.find(function(s){ return s.modelo===modelo && s.almacenamiento===alm && (s.color||"")===color; });
     var p = existing
       ? apiUpdate("sealed_catalog", existing.id, {precioCompra:compra})
-      : apiCreate("sealed_catalog", {modelo:modelo, almacenamiento:alm, precioCompra:compra, createdAt:new Date().toISOString()});
+      : apiCreate("sealed_catalog", {modelo:modelo, almacenamiento:alm, color:color, precioCompra:compra, createdAt:new Date().toISOString()});
     p.then(function(){
       document.getElementById("selCompraInput").value = "";
+      document.getElementById("selColorInput").value = "";
       updateSelPrecioPreview_();
       toast(existing ? "✔ Precio actualizado." : "✔ Agregado a la lista.");
       refreshAll();
@@ -2013,7 +2020,7 @@
     if (!el) return;
     var items = sealedList.slice().sort(function(a,b){ return (a.modelo||"").localeCompare(b.modelo||"") || (a.almacenamiento||"").localeCompare(b.almacenamiento||""); });
     if (!items.length){
-      el.innerHTML = '<tr><td colspan="5" class="empty-note">Todavía no cargaste modelos sellados.</td></tr>';
+      el.innerHTML = '<tr><td colspan="6" class="empty-note">Todavía no cargaste modelos sellados.</td></tr>';
       return;
     }
     el.innerHTML = items.map(function(s){
@@ -2021,6 +2028,7 @@
       return '<tr data-id="'+esc(s.id)+'">'+
         '<td>'+esc(s.modelo)+'</td>'+
         '<td>'+esc(s.almacenamiento)+'</td>'+
+        '<td>'+esc(s.color)+'</td>'+
         '<td class="num"><input class="mono" data-sel-compra="'+esc(s.id)+'" type="number" min="0" step="1" value="'+(s.precioCompra!=null?s.precioCompra:"")+'" style="width:90px;text-align:right;" /></td>'+
         '<td class="num mono">'+(final!=null?fmtUSD.format(final):"—")+'</td>'+
         '<td><button class="btn btn-ghost btn-sm" data-sel-del="'+esc(s.id)+'" type="button">Eliminar</button></td>'+
@@ -2052,6 +2060,7 @@
     if (!items.length){ lines.push("Sin modelos cargados por el momento."); return lines.join("\n"); }
     items.forEach(function(s){
       var label = [s.modelo, s.almacenamiento].filter(Boolean).join(" ");
+      if (s.color) label += " — "+s.color;
       var final = calcPrecioFinal(s.precioCompra);
       lines.push("- "+label+(final!=null ? " — "+fmtUSD.format(final) : ""));
     });
