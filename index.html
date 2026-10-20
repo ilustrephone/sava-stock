@@ -2169,6 +2169,18 @@
   });
   function remLineTotal_(l){ return (l.cantidad||0) * (l.precioUnitario!=null ? l.precioUnitario : 0); }
   function remLineCosto_(l){ return (l.cantidad||0) * (l.costoUnitario!=null ? l.costoUnitario : 0); }
+  function findLastCostoForModelo_(modelo){
+    var key = (modelo||"").trim().toLowerCase();
+    if (!key) return null;
+    for (var i=0;i<remitosList.length;i++){
+      var items = remitosList[i].items||[];
+      for (var j=0;j<items.length;j++){
+        var it = items[j];
+        if (it.costoUnitario!=null && (it.modelo||"").trim().toLowerCase()===key) return it.costoUnitario;
+      }
+    }
+    return null;
+  }
   function addRemLineFromInputs_(silent){
     var modelo = document.getElementById("remItemModeloInput").value.trim();
     var cantidadRaw = document.getElementById("remItemCantidadInput").value;
@@ -2189,6 +2201,12 @@
     document.getElementById("remItemModeloInput").focus();
   });
   document.getElementById("remItemModeloInput").addEventListener("input", function(){ updateRemSaveState_(); });
+  document.getElementById("remItemModeloInput").addEventListener("blur", function(){
+    var costoInput = document.getElementById("remItemCostoInput");
+    if (costoInput.value !== "") return;
+    var found = findLastCostoForModelo_(this.value);
+    if (found!=null) costoInput.value = found;
+  });
   document.getElementById("remCurrencySelect").addEventListener("change", function(){ renderRemLinesList(); });
   document.getElementById("remSaveBtn").addEventListener("click", function(){
     if (previewGuard()) return;
