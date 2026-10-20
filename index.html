@@ -384,6 +384,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l1 4H5l1-4Z"/><path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7M9 12h6M9 16h6"/></svg>
         <span>Ventas</span>
       </button>
+      <button class="nav-item" data-view="remitos" type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>
+        <span>Remitos</span>
+      </button>
       <button class="nav-item" data-view="cuentas" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
         <span>Cuentas por cobrar</span>
@@ -545,6 +549,29 @@
       <div id="salesList"></div>
     </section>
 
+    <!-- REMITOS VIEW -->
+    <section class="view" id="view-remitos" hidden>
+      <div class="card" style="padding:16px 18px;margin-bottom:16px;">
+        <div class="section-title">Nuevo remito</div>
+        <div class="field-row3">
+          <div class="field"><label>Cliente</label><select id="remClienteSelect"><option value="">Elegí un cliente…</option><option value="NEW">+ Cliente nuevo</option></select></div>
+          <div class="field" id="remNewClienteWrap" hidden><label>Nombre (cliente nuevo)</label><input id="remNewClienteInput" type="text" placeholder="Nombre del cliente" /></div>
+          <div class="field"><label>Teléfono</label><input id="remTelefonoInput" class="mono" type="text" placeholder="Opcional — para enviar por WhatsApp" /></div>
+        </div>
+        <div class="field-row3">
+          <div class="field"><label>Producto / descripción</label><input id="remItemModeloInput" type="text" placeholder="Ej. Funda transparente iPhone 15" /></div>
+          <div class="field"><label>Cantidad</label><input id="remItemCantidadInput" class="mono" type="number" min="1" step="1" placeholder="1" /></div>
+          <div class="field"><label>Precio unitario (USD)</label><input id="remItemPrecioInput" class="mono" type="number" min="0" step="0.01" placeholder="0" /></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="remAddLineBtn" type="button">+ Agregar item al remito</button>
+        <div id="remLinesList" style="margin-top:6px;"></div>
+        <div class="scan-hint" id="remTotalPreview">Total: —</div>
+        <div class="field" style="margin-top:10px;"><label>Notas</label><input id="remNotasInput" type="text" placeholder="Condición de pago, entrega, etc. (opcional)" /></div>
+        <button class="btn btn-primary" id="remSaveBtn" type="button" style="margin-top:12px;" disabled>Guardar remito</button>
+      </div>
+      <div id="remitosList"></div>
+    </section>
+
     <!-- CUENTAS POR COBRAR VIEW -->
     <section class="view" id="view-cuentas" hidden>
       <div class="stat-grid" id="cuentasStatGrid" style="margin-bottom:16px;"></div>
@@ -686,7 +713,7 @@
   /* ============ state ============ */
   var apiReady = false;
   var pollTimer = null;
-  var stockList = [], clientsList = [], salesList = [], serviceTickets = [], ordersList = [], sealedList = [];
+  var stockList = [], clientsList = [], salesList = [], serviceTickets = [], ordersList = [], sealedList = [], remitosList = [];
   var currentView = "scan";
   var scanMode = "alta"; // alta | venta
   var pendingImei = null; // imei awaiting quick-add form
@@ -754,6 +781,11 @@
     sealedList = [
       {id:"sl1",modelo:"iPhone 16 Pro",almacenamiento:"256 GB",color:"Titanio natural",precioCompra:950,createdAt:new Date(now-1000*60*60*24*3).toISOString()},
       {id:"sl2",modelo:"iPhone 17 Pro Max",almacenamiento:"256 GB",color:"Negro espacial",precioCompra:1250,createdAt:new Date(now-1000*60*60*24*2).toISOString()}
+    ];
+    remitosList = [
+      {id:"r1",numero:1,clientId:"c1",clientName:"Martín Reventas SRL",phone:"261 555-0110",
+        items:[{modelo:"Funda transparente iPhone 15",cantidad:10,precioUnitario:3},{modelo:"Vidrio templado universal",cantidad:20,precioUnitario:1.5}],
+        total:60,notas:"",createdAt:new Date(now-1000*60*60*24*1).toISOString()}
     ];
   }
 
@@ -831,14 +863,21 @@
   function normalizeSealedRow_(o){
     return {id:o.id, modelo:o.modelo||"", almacenamiento:o.almacenamiento||"", color:o.color||"", precioCompra:toNum_(o.precioCompra), createdAt:o.createdAt||""};
   }
+  function normalizeRemitoRow_(o){
+    var items = [];
+    try{ items = JSON.parse(o.itemsJson||"[]"); }catch(e){ items = []; }
+    items = items.map(function(it){ return {modelo:it.modelo||"", cantidad:toNum_(it.cantidad)||0, precioUnitario:toNum_(it.precioUnitario)}; });
+    return {id:o.id, numero:o.numero!=null?Number(o.numero):null, clientId:o.clientId||"", clientName:o.clientName||"", phone:o.phone||"", items:items, total:toNum_(o.total)||0, notas:o.notas||"", createdAt:o.createdAt||""};
+  }
   function refreshAll(){
-    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders"), apiList("sealed_catalog")]).then(function(results){
+    return Promise.all([apiList("stock"), apiList("clients"), apiList("sales"), apiList("service_tickets"), apiList("orders"), apiList("sealed_catalog"), apiList("remitos")]).then(function(results){
       stockList = results[0].map(normalizeStockRow_).sort(function(a,b){ return (b.addedAt||"").localeCompare(a.addedAt||""); });
       clientsList = results[1].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       salesList = results[2].map(normalizeSaleRow_).sort(function(a,b){ return (b.date||"").localeCompare(a.date||""); });
       serviceTickets = results[3].sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       ordersList = results[4].map(normalizeOrderRow_).sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
       sealedList = results[5].map(normalizeSealedRow_).sort(function(a,b){ return (a.modelo||"").localeCompare(b.modelo||"") || (a.almacenamiento||"").localeCompare(b.almacenamiento||""); });
+      remitosList = results[6].map(normalizeRemitoRow_).sort(function(a,b){ return (b.numero||0)-(a.numero||0); });
       apiReady = true;
       document.getElementById("previewBanner").hidden = true;
       renderCurrentView(); renderSidebarCount();
@@ -905,6 +944,15 @@
     return apiDelete("clients", id).then(function(r){ refreshAll(); return r; });
   }
 
+  function addRemito(data){
+    if (previewGuard()) return Promise.reject();
+    return apiCreate("remitos", data).then(function(r){ refreshAll(); return r; });
+  }
+  function deleteRemito(id){
+    if (previewGuard()) return Promise.reject();
+    return apiDelete("remitos", id).then(function(r){ refreshAll(); return r; });
+  }
+
   function confirmSale(items, client, notes, dueDate, initialPayment){
     if (previewGuard()) return Promise.reject();
     var total = items.reduce(function(s,it){ return s + (Number(it.precio)||0); },0);
@@ -954,6 +1002,7 @@
     servicio:{title:"Servicio técnico", sub:"Equipos que llegaron y están pendientes de reparación."},
     clients:{title:"Clientes", sub:"Revendedores y su historial de compras."},
     sales:{title:"Ventas", sub:"Historial de pedidos confirmados."},
+    remitos:{title:"Remitos", sub:"Comprobante de entrega para ventas mayoristas de mercadería en general."},
     cuentas:{title:"Cuentas por cobrar", sub:"Saldos pendientes y fechas límite de pago."},
     seguimientos:{title:"Seguimientos", sub:"Clientes para recontactar por WhatsApp."},
     sellados:{title:"Sellados", sub:"Modelos nuevos disponibles para encargar, con tu margen aplicado."},
@@ -980,6 +1029,7 @@
     else if (currentView==="servicio") renderServicio();
     else if (currentView==="clients") renderClients();
     else if (currentView==="sales") renderSales();
+    else if (currentView==="remitos") renderRemitos();
     else if (currentView==="cuentas") renderCuentas();
     else if (currentView==="seguimientos") renderSeguimientos();
     else if (currentView==="sellados") renderSellados();
@@ -2089,6 +2139,240 @@
     });
   }
   document.getElementById("selWaListBtn").addEventListener("click", openSealedListModal);
+
+
+  /* ============ REMITOS VIEW ============ */
+  var remLines = []; // líneas del remito que se está armando: [{modelo,cantidad,precioUnitario}]
+  document.getElementById("remClienteSelect").addEventListener("change", function(){
+    var val = this.value;
+    var wrap = document.getElementById("remNewClienteWrap");
+    if (val === "NEW"){
+      wrap.hidden = false;
+    } else {
+      wrap.hidden = true;
+      var c = clientsList.find(function(x){ return x.id===val; });
+      var phoneInput = document.getElementById("remTelefonoInput");
+      if (c && !phoneInput.value) phoneInput.value = c.phone||"";
+    }
+  });
+  function remLineTotal_(l){ return (l.cantidad||0) * (l.precioUnitario!=null ? l.precioUnitario : 0); }
+  function addRemLineFromInputs_(silent){
+    var modelo = document.getElementById("remItemModeloInput").value.trim();
+    var cantidadRaw = document.getElementById("remItemCantidadInput").value;
+    var precioRaw = document.getElementById("remItemPrecioInput").value;
+    if (!modelo){ if (!silent) toast("Contá qué producto lleva.", true); return false; }
+    var cantidad = cantidadRaw!=="" ? Number(cantidadRaw) : 1;
+    remLines.push({modelo:modelo, cantidad:cantidad, precioUnitario: precioRaw!=="" ? Number(precioRaw) : null});
+    document.getElementById("remItemModeloInput").value = "";
+    document.getElementById("remItemCantidadInput").value = "";
+    document.getElementById("remItemPrecioInput").value = "";
+    return true;
+  }
+  document.getElementById("remAddLineBtn").addEventListener("click", function(){
+    if (!addRemLineFromInputs_(false)) return;
+    renderRemLinesList();
+    document.getElementById("remItemModeloInput").focus();
+  });
+  document.getElementById("remItemModeloInput").addEventListener("input", function(){ updateRemSaveState_(); });
+  document.getElementById("remSaveBtn").addEventListener("click", function(){
+    if (previewGuard()) return;
+    if (addRemLineFromInputs_(true)) renderRemLinesList(); // si quedó un producto cargado sin tocar "+ Agregar", lo suma solo
+    if (!remLines.length){ toast("Agregá al menos un producto.", true); return; }
+    var sel = document.getElementById("remClienteSelect");
+    var selVal = sel.value;
+    if (!selVal){ toast("Elegí un cliente (o cargá uno nuevo).", true); return; }
+    var phone = document.getElementById("remTelefonoInput").value.trim();
+    var notas = document.getElementById("remNotasInput").value.trim();
+    var itemsPayload = remLines.map(function(l){ return {modelo:l.modelo, cantidad:l.cantidad, precioUnitario:l.precioUnitario}; });
+    var total = remLines.reduce(function(s,l){ return s + remLineTotal_(l); }, 0);
+    var nextNumero = remitosList.reduce(function(m,r){ return Math.max(m, r.numero||0); }, 0) + 1;
+    function saveRemito(clientId, clientName, phoneForRemito){
+      addRemito({
+        numero: nextNumero, clientId: clientId||"", clientName: clientName, phone: phoneForRemito||"",
+        itemsJson: JSON.stringify(itemsPayload), total: total, notas: notas,
+        createdAt: new Date().toISOString()
+      }).then(function(){
+        remLines = [];
+        document.getElementById("remTelefonoInput").value = "";
+        document.getElementById("remNewClienteInput").value = "";
+        document.getElementById("remNewClienteWrap").hidden = true;
+        document.getElementById("remNotasInput").value = "";
+        sel.value = "";
+        renderRemLinesList();
+        toast("✔ Remito N° "+nextNumero+" guardado.");
+      }).catch(function(err){ toast("No se pudo guardar: "+(err&&err.message||err), true); });
+    }
+    if (selVal === "NEW"){
+      var newName = document.getElementById("remNewClienteInput").value.trim();
+      if (!newName){ toast("Escribí el nombre del cliente nuevo.", true); return; }
+      addClient({name:newName, phone:phone}).then(function(ref){ saveRemito(ref.id, newName, phone); }).catch(function(){});
+    } else {
+      var c = clientsList.find(function(x){ return x.id===selVal; });
+      saveRemito(selVal, c?c.name:"", phone || (c?c.phone:""));
+    }
+  });
+  function renderRemClienteSelect(){
+    var sel = document.getElementById("remClienteSelect");
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">Elegí un cliente…</option>' +
+      clientsList.map(function(c){ return '<option value="'+esc(c.id)+'">'+esc(c.name)+(c.city?' · '+esc(c.city):'')+'</option>'; }).join("") +
+      '<option value="NEW">+ Cliente nuevo</option>';
+    if (cur && Array.from(sel.options).some(function(o){ return o.value===cur; })) sel.value = cur;
+    document.getElementById("remNewClienteWrap").hidden = (sel.value !== "NEW");
+  }
+  function renderRemLinesList(){
+    var el = document.getElementById("remLinesList");
+    if (!el) return;
+    el.innerHTML = remLines.map(function(l,idx){
+      return '<div class="cart-row"><div class="cart-main"><strong>'+esc(l.modelo)+'</strong>'+
+        '<span>Cantidad: '+esc(l.cantidad)+'</span></div>'+
+        '<span class="mono" style="min-width:70px;text-align:right;">'+(l.precioUnitario!=null?fmtUSD2.format(remLineTotal_(l)):"—")+'</span>'+
+        '<button class="btn btn-ghost btn-sm" data-rem-line-remove="'+idx+'" type="button">Quitar</button></div>';
+    }).join("");
+    el.querySelectorAll("[data-rem-line-remove]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        remLines.splice(Number(btn.dataset.remLineRemove),1);
+        renderRemLinesList();
+      });
+    });
+    var total = remLines.reduce(function(s,l){ return s + remLineTotal_(l); }, 0);
+    document.getElementById("remTotalPreview").textContent = "Total: " + (remLines.length ? fmtUSD2.format(total) : "—");
+    updateRemSaveState_();
+  }
+  function updateRemSaveState_(){
+    var saveBtn = document.getElementById("remSaveBtn");
+    if (!saveBtn) return;
+    var modeloInput = document.getElementById("remItemModeloInput");
+    var hasTypedModelo = modeloInput && modeloInput.value.trim()!=="";
+    saveBtn.disabled = !(remLines.length || hasTypedModelo);
+  }
+  function buildRemitoGeneralText(remito){
+    var lines = [];
+    lines.push("*Sava Mayorista* — Remito de entrega");
+    lines.push("Remito N°: "+String(remito.numero||"").padStart(4,"0"));
+    lines.push("Fecha: "+fmtDateTime(remito.createdAt));
+    lines.push("Cliente: "+remito.clientName);
+    lines.push("");
+    lines.push("Mercadería entregada:");
+    (remito.items||[]).forEach(function(it, i){
+      var sub = remLineTotal_(it);
+      lines.push((i+1)+") "+it.modelo+" — x"+it.cantidad+(it.precioUnitario!=null ? " — "+fmtUSD2.format(sub) : ""));
+    });
+    lines.push("");
+    lines.push("Total: "+fmtUSD2.format(remito.total));
+    if (remito.notas){ lines.push(""); lines.push("Notas: "+remito.notas); }
+    lines.push("");
+    lines.push("_Comprobante interno de entrega — no reemplaza factura._");
+    return lines.join("\n");
+  }
+  function openRemitoGeneralModal(remito){
+    var client = clientsList.find(function(c){ return c.id===remito.clientId; });
+    var phone = remito.phone || (client ? client.phone : "");
+    var text = buildRemitoGeneralText(remito);
+    var body =
+      '<div class="field"><label>Mensaje (lo podés editar antes de enviar)</label><textarea id="remGenText" class="mono">'+esc(text)+'</textarea></div>'+
+      (phone ? '' : '<div class="scan-hint" style="margin-bottom:10px;">Este cliente no tiene teléfono cargado — completalo en su ficha o copiá el texto para enviarlo manualmente.</div>')+
+      '<div class="modal-actions">'+
+        '<button class="btn btn-ghost" id="remGenCopy" type="button">Copiar texto</button>'+
+        '<a class="btn btn-scan" id="remGenSend" href="'+esc(waLink(phone, text))+'" target="_blank" rel="noopener">Enviar por WhatsApp</a>'+
+      '</div>';
+    openModal("Remito N° "+String(remito.numero||"").padStart(4,"0")+" — "+esc(remito.clientName), body);
+    document.getElementById("remGenCopy").addEventListener("click", function(){
+      var ta = document.getElementById("remGenText");
+      ta.select();
+      try{ navigator.clipboard.writeText(ta.value); }catch(e){ try{ document.execCommand("copy"); }catch(e2){} }
+      toast("Texto copiado.");
+    });
+    document.getElementById("remGenText").addEventListener("input", function(e){
+      document.getElementById("remGenSend").setAttribute("href", waLink(phone, e.target.value));
+    });
+  }
+  function buildRemitoPrintHtml(remito){
+    var filas = (remito.items||[]).map(function(it){
+      return '<tr><td>'+esc(it.modelo)+'</td><td style="text-align:center;">'+esc(it.cantidad)+'</td>'+
+        '<td style="text-align:right;">'+(it.precioUnitario!=null?fmtUSD2.format(it.precioUnitario):"—")+'</td>'+
+        '<td style="text-align:right;">'+(it.precioUnitario!=null?fmtUSD2.format(remLineTotal_(it)):"—")+'</td></tr>';
+    }).join("");
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Remito N° '+String(remito.numero||"").padStart(4,"0")+'</title>'+
+      '<style>'+
+        'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#12181A;padding:36px;max-width:760px;margin:0 auto;}'+
+        'h1{font-size:20px;margin:0 0 4px;}'+
+        '.sub{color:#5C6B65;font-size:13px;margin-bottom:24px;}'+
+        'table{width:100%;border-collapse:collapse;margin-top:16px;}'+
+        'th,td{padding:8px 6px;border-bottom:1px solid #D5DBD7;font-size:13.5px;text-align:left;}'+
+        'th{text-transform:uppercase;font-size:11px;letter-spacing:.04em;color:#5C6B65;}'+
+        '.meta{display:flex;justify-content:space-between;margin-bottom:6px;font-size:13.5px;}'+
+        '.total-row td{font-weight:700;border-top:2px solid #12181A;border-bottom:none;}'+
+        '.foot{margin-top:28px;font-size:11.5px;color:#5C6B65;}'+
+        '@media print{ body{padding:0;} }'+
+      '</style></head><body>'+
+      '<h1>Sava Mayorista</h1>'+
+      '<div class="sub">Remito de entrega — mercadería general</div>'+
+      '<div class="meta"><span><strong>Remito N°:</strong> '+String(remito.numero||"").padStart(4,"0")+'</span><span><strong>Fecha:</strong> '+esc(fmtDateTime(remito.createdAt))+'</span></div>'+
+      '<div class="meta"><span><strong>Cliente:</strong> '+esc(remito.clientName)+'</span><span>'+(remito.phone?esc(remito.phone):'')+'</span></div>'+
+      '<table><thead><tr><th>Producto</th><th style="text-align:center;">Cant.</th><th style="text-align:right;">Precio unit.</th><th style="text-align:right;">Subtotal</th></tr></thead>'+
+      '<tbody>'+filas+
+      '<tr class="total-row"><td colspan="3">Total</td><td style="text-align:right;">'+fmtUSD2.format(remito.total)+'</td></tr>'+
+      '</tbody></table>'+
+      (remito.notas ? '<div class="foot"><strong>Notas:</strong> '+esc(remito.notas)+'</div>' : '')+
+      '<div class="foot">Comprobante interno de entrega — no reemplaza factura.</div>'+
+      '</body></html>';
+  }
+  function openRemitoPrintWindow(remito){
+    var html = buildRemitoPrintHtml(remito);
+    var w = window.open("", "_blank");
+    if (!w){ toast("El navegador bloqueó la ventana — habilitá los pop-ups para imprimir.", true); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(function(){ try{ w.print(); }catch(e){} }, 300);
+  }
+  function renderRemitos(){
+    renderRemClienteSelect();
+    renderRemLinesList();
+    var el = document.getElementById("remitosList");
+    if (!el) return;
+    if (!remitosList.length){
+      el.innerHTML = '<div class="empty-note">Todavía no cargaste remitos.</div>';
+      return;
+    }
+    el.innerHTML = remitosList.map(function(r){
+      var resumen = (r.items||[]).map(function(it){ return it.modelo+" x"+it.cantidad; }).join(", ");
+      return '<div class="card" style="padding:14px 16px;margin-bottom:10px;" data-id="'+esc(r.id)+'">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'+
+          '<div><strong>Remito N° '+String(r.numero||"").padStart(4,"0")+'</strong>'+
+          '<div style="font-size:12.5px;color:var(--ink-muted);">'+esc(r.clientName)+(r.phone?' · '+esc(r.phone):'')+'</div></div>'+
+          '<span class="mono" style="font-size:13.5px;">'+fmtUSD2.format(r.total)+'</span>'+
+        '</div>'+
+        '<div style="font-size:12.5px;color:var(--ink-muted);margin-top:6px;">'+esc(resumen)+'</div>'+
+        '<div class="modal-actions" style="justify-content:flex-end;margin-top:10px;">'+
+          '<button class="btn btn-ghost btn-sm" data-rem-del="'+esc(r.id)+'" type="button">Eliminar</button>'+
+          '<button class="btn btn-ghost btn-sm" data-rem-print="'+esc(r.id)+'" type="button">Imprimir / PDF</button>'+
+          '<button class="btn btn-scan btn-sm" data-rem-wa="'+esc(r.id)+'" type="button">Enviar por WhatsApp</button>'+
+        '</div>'+
+      '</div>';
+    }).join("");
+    el.querySelectorAll("[data-rem-wa]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var r = remitosList.find(function(x){ return x.id===btn.dataset.remWa; });
+        if (r) openRemitoGeneralModal(r);
+      });
+    });
+    el.querySelectorAll("[data-rem-print]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var r = remitosList.find(function(x){ return x.id===btn.dataset.remPrint; });
+        if (r) openRemitoPrintWindow(r);
+      });
+    });
+    el.querySelectorAll("[data-rem-del]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        if (!confirm("¿Eliminar este remito?")) return;
+        deleteRemito(btn.dataset.remDel).then(function(){ toast("Eliminado."); }).catch(function(){});
+      });
+    });
+  }
 
   /* ============ SERVICIO TECNICO VIEW ============ */
   document.getElementById("stAddBtn").addEventListener("click", function(){
